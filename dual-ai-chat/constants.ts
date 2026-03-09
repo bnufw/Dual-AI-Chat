@@ -151,7 +151,7 @@ export const OPENAI_API_KEY_STORAGE_KEY = 'dualAiChatOpenAiApiKey';
 export const OPENAI_COGNITO_MODEL_ID_STORAGE_KEY = 'dualAiChatOpenAiCognitoModelId';
 export const OPENAI_MUSE_MODEL_ID_STORAGE_KEY = 'dualAiChatOpenAiMuseModelId';
 
-export const DEFAULT_OPENAI_API_BASE_URL = 'https://api.openai.com/v1'; 
+export const DEFAULT_OPENAI_API_BASE_URL = 'https://codex-api.packycode.com/v1';
 export const DEFAULT_OPENAI_COGNITO_MODEL_ID = 'gpt-5.4'; 
 export const DEFAULT_OPENAI_MUSE_MODEL_ID = 'gpt-5.4';
 export const COGNITO_ROLE_CONFIG_STORAGE_KEY = 'dualAiChatCognitoRoleConfig';
