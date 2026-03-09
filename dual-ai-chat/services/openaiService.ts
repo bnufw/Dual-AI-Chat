@@ -5,20 +5,23 @@ const buildOpenAiResponsesInput = (
   prompt: string,
   imagePart?: { mimeType: string; data: string }
 ) => {
-  if (!imagePart) return prompt;
+  const content: Array<Record<string, unknown>> = [
+    { type: 'input_text', text: prompt },
+  ];
+
+  if (imagePart) {
+    content.push({
+      type: 'input_image',
+      image_url: {
+        url: `data:${imagePart.mimeType};base64,${imagePart.data}`,
+      },
+    });
+  }
 
   return [
     {
       role: 'user',
-      content: [
-        { type: 'input_text', text: prompt },
-        {
-          type: 'input_image',
-          image_url: {
-            url: `data:${imagePart.mimeType};base64,${imagePart.data}`,
-          },
-        },
-      ],
+      content,
     },
   ];
 };
@@ -74,7 +77,10 @@ export const generateOpenAiResponse = async (
       throw new DOMException('Aborted', 'AbortError');
     }
 
-    const endpoint = `${baseUrl.replace(/\/+$/, '')}/responses`;
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+    const endpoint = normalizedBaseUrl.endsWith('/responses')
+      ? normalizedBaseUrl
+      : `${normalizedBaseUrl}/responses`;
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
