@@ -1,11 +1,6 @@
 import { DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT } from '../constants';
 import { AiResponsePayload } from '../types';
 
-const shouldUseOpenAiProxy = () => {
-  if (typeof window === 'undefined') return false;
-  return !['localhost', '127.0.0.1'].includes(window.location.hostname);
-};
-
 const buildOpenAiResponsesInput = (
   prompt: string,
   imagePart?: { mimeType: string; data: string }
@@ -48,7 +43,7 @@ const extractResponseText = (data: any) => {
 const buildFetchFailureMessage = (endpoint: string) => {
   const reasons = [
     '浏览器没有拿到任何 HTTP 响应，这通常不是模型正文报错。',
-    '优先检查跨域 CORS/OPTIONS 预检是否被目标接口拒绝。',
+    '优先检查该接口是否允许当前页面来源的 CORS/OPTIONS 预检。',
     '确认 Base URL 可被浏览器直接访问，且部署站点与接口之间没有被防火墙、代理或插件拦截。',
   ];
 
@@ -56,12 +51,7 @@ const buildFetchFailureMessage = (endpoint: string) => {
     reasons.push('当前页面是 HTTPS，但接口是 HTTP，浏览器会直接拦截混合内容请求。');
   }
 
-  return [
-    `与AI通信时出错: Failed to fetch`,
-    `请求地址: ${endpoint}`,
-    ...reasons,
-    '如果部署在 Vercel，最稳的方案是改成同域 Serverless API 代理，再由代理转发到 OpenAI 兼容后端。',
-  ].join('\n');
+  return [`与AI通信时出错: Failed to fetch`, `请求地址: ${endpoint}`, ...reasons].join('\n');
 };
 
 export const generateOpenAiResponse = async (
@@ -100,15 +90,7 @@ export const generateOpenAiResponse = async (
   const directEndpoint = normalizedBaseUrl.endsWith('/responses')
     ? normalizedBaseUrl
     : `${normalizedBaseUrl}/responses`;
-  const useProxy = shouldUseOpenAiProxy();
-  const endpoint = useProxy ? '/api/openai-compatible' : directEndpoint;
-  const proxyPayload = useProxy
-    ? {
-      ...requestBody,
-      baseUrl,
-      apiKey,
-    }
-    : requestBody;
+  const endpoint = directEndpoint;
 
   try {
     if (signal?.aborted) {
@@ -118,9 +100,9 @@ export const generateOpenAiResponse = async (
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(useProxy ? {} : { Authorization: `Bearer ${resolvedApiKey}` }),
+        Authorization: `Bearer ${resolvedApiKey}`,
       },
-      body: JSON.stringify(proxyPayload),
+      body: JSON.stringify(requestBody),
       signal,
     });
 
