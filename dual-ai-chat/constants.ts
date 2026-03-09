@@ -43,6 +43,7 @@ export const DEFAULT_COGNITO_MODEL_API_NAME = GEMINI_3_PRO_MODEL_ID;
 export const DEFAULT_MUSE_MODEL_API_NAME = GEMINI_3_PRO_MODEL_ID;
 export const DEFAULT_GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com';
 export const DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT = 'xhigh';
+export const DEFAULT_OPENAI_RESPONSES_MAX_OUTPUT_TOKENS = 6000;
 
 export const THINKING_BUDGET_RANGES: { [key: string]: { min: number; max: number } } = {
   [GEMINI_2_5_FLASH_MODEL_ID]: { min: 1024, max: 24576 },
