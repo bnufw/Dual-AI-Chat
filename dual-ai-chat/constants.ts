@@ -41,6 +41,8 @@ export const MODELS: AiModel[] = [
 
 export const DEFAULT_COGNITO_MODEL_API_NAME = GEMINI_3_PRO_MODEL_ID;
 export const DEFAULT_MUSE_MODEL_API_NAME = GEMINI_3_PRO_MODEL_ID;
+export const DEFAULT_GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com';
+export const DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT = 'xhigh';
 
 export const THINKING_BUDGET_RANGES: { [key: string]: { min: number; max: number } } = {
   [GEMINI_2_5_FLASH_MODEL_ID]: { min: 1024, max: 24576 },
@@ -150,8 +152,10 @@ export const OPENAI_COGNITO_MODEL_ID_STORAGE_KEY = 'dualAiChatOpenAiCognitoModel
 export const OPENAI_MUSE_MODEL_ID_STORAGE_KEY = 'dualAiChatOpenAiMuseModelId';
 
 export const DEFAULT_OPENAI_API_BASE_URL = 'https://api.openai.com/v1'; 
-export const DEFAULT_OPENAI_COGNITO_MODEL_ID = 'o4-mini'; 
-export const DEFAULT_OPENAI_MUSE_MODEL_ID = 'o4-mini';
+export const DEFAULT_OPENAI_COGNITO_MODEL_ID = 'gpt-5.4'; 
+export const DEFAULT_OPENAI_MUSE_MODEL_ID = 'gpt-5.4';
+export const COGNITO_ROLE_CONFIG_STORAGE_KEY = 'dualAiChatCognitoRoleConfig';
+export const MUSE_ROLE_CONFIG_STORAGE_KEY = 'dualAiChatMuseRoleConfig';
 
 // Thinking Config Keys
 export const THINKING_BUDGET_STORAGE_KEY = 'dualAiChatThinkingBudget'; // Legacy/Fallback

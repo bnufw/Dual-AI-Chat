@@ -1,50 +1,77 @@
-
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { ChatMessage, MessageSender, MessagePurpose, ApiKeyStatus } from '../types';
+import { ChatMessage, MessageSender, MessagePurpose, ApiKeyStatus, AiRoleConfig } from '../types';
 import { useAppUI } from './useAppUI';
 import { useNotepadLogic } from './useNotepadLogic';
 import { useSettings } from './useSettings';
 import { useChatLogic } from './useChatLogic';
-import { generateUniqueId, getWelcomeMessageText } from '../utils/appUtils';
+import { generateUniqueId, getProviderLabel, getWelcomeMessageText } from '../utils/appUtils';
 import { CHAT_MESSAGES_STORAGE_KEY } from '../constants';
 
 const DEFAULT_CHAT_PANEL_PERCENT = 60;
+
+const getRoleConfigIssue = (roleLabel: string, config: AiRoleConfig): ApiKeyStatus | null => {
+  const missingFields: string[] = [];
+  if (!config.apiKey.trim()) missingFields.push('API Key');
+  if (!config.baseUrl.trim()) missingFields.push('Base URL');
+  if (!config.modelId.trim()) missingFields.push('Model ID');
+
+  if (missingFields.length === 0) return null;
+
+  return {
+    isMissing: true,
+    message: `${roleLabel} 的 ${getProviderLabel(config.provider)} 配置不完整：缺少 ${missingFields.join('、')}。`,
+  };
+};
+
+const getConfigurationIssue = (
+  cognitoConfig: AiRoleConfig,
+  museConfig: AiRoleConfig
+): ApiKeyStatus | null =>
+  getRoleConfigIssue('Cognito', cognitoConfig) || getRoleConfigIssue('Muse', museConfig);
 
 export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElement>) => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const saved = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
     if (saved) {
       try {
-        return JSON.parse(saved).map((m: any) => ({
-          ...m,
-          timestamp: new Date(m.timestamp)
+        return JSON.parse(saved).map((message: any) => ({
+          ...message,
+          timestamp: new Date(message.timestamp),
         }));
-      } catch (e) {
-        console.error("Failed to parse saved messages", e);
+      } catch (error) {
+        console.error('Failed to parse saved messages', error);
       }
     }
     return [];
   });
-  
-  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus>({});
-  
-  // Persist messages to local storage
+
+  const [runtimeApiKeyStatus, setRuntimeApiKeyStatus] = useState<ApiKeyStatus>({});
+  const didSyncConfigRef = useRef(false);
+
   useEffect(() => {
     localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(messages));
   }, [messages]);
 
-  // Keep a ref for accessing messages in callbacks without dependency loops
   const messagesRef = useRef<ChatMessage[]>(messages);
   messagesRef.current = messages;
 
-  // UI State Hook
   const ui = useAppUI(DEFAULT_CHAT_PANEL_PERCENT, panelsContainerRef);
-
-  // Notepad Logic Hook
-  const notepad = useNotepadLogic(); 
-
-  // Settings Hook
+  const notepad = useNotepadLogic();
   const settings = useSettings();
+
+  const configIssue = useMemo(
+    () => getConfigurationIssue(settings.cognitoConfig, settings.museConfig),
+    [settings.cognitoConfig, settings.museConfig]
+  );
+  const apiKeyStatus = configIssue || runtimeApiKeyStatus;
+
+  useEffect(() => {
+    if (!didSyncConfigRef.current) {
+      didSyncConfigRef.current = true;
+      return;
+    }
+    setRuntimeApiKeyStatus({});
+  }, [settings.cognitoConfig, settings.museConfig]);
 
   const addMessage = useCallback((
     text: string,
@@ -55,7 +82,7 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
     thoughts?: string
   ): string => {
     const messageId = generateUniqueId();
-    setMessages(prev => [...prev, {
+    setMessages((previous) => [...previous, {
       id: messageId,
       text,
       sender,
@@ -71,29 +98,17 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
   const chat = useChatLogic({
     addMessage,
     processNotepadUpdateFromAI: notepad.processNotepadUpdateFromAI,
-    setGlobalApiKeyStatus: setApiKeyStatus,
+    setGlobalApiKeyStatus: setRuntimeApiKeyStatus,
     cognitoModelDetails: settings.actualCognitoModelDetails,
     museModelDetails: settings.actualMuseModelDetails,
-    // Gemini Custom Config
-    useCustomApiConfig: settings.useCustomApiConfig,
-    customApiKey: settings.customApiKey,
-    customApiEndpoint: settings.customApiEndpoint,
-    // OpenAI Custom Config
-    useOpenAiApiConfig: settings.useOpenAiApiConfig,
-    openAiApiKey: settings.openAiApiKey,
-    openAiApiBaseUrl: settings.openAiApiBaseUrl,
-    openAiCognitoModelId: settings.openAiCognitoModelId,
-    openAiMuseModelId: settings.openAiMuseModelId,
-    // Shared Settings
+    cognitoConfig: settings.cognitoConfig,
+    museConfig: settings.museConfig,
     discussionMode: settings.discussionMode,
     manualFixedTurns: settings.manualFixedTurns,
-    
-    // Thinking Config
     cognitoThinkingBudget: settings.cognitoThinkingBudget,
     cognitoThinkingLevel: settings.cognitoThinkingLevel,
     museThinkingBudget: settings.museThinkingBudget,
     museThinkingLevel: settings.museThinkingLevel,
-    
     cognitoSystemPrompt: settings.cognitoSystemPrompt,
     museSystemPrompt: settings.museSystemPrompt,
     notepadContent: notepad.notepadContent,
@@ -107,80 +122,65 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
       setMessages([]);
       notepad.clearNotepadContent();
     }
+
     ui.setIsNotepadFullscreen(false);
-    setApiKeyStatus({});
+    setRuntimeApiKeyStatus({});
 
-    let missingKeyMsg = "";
-    if (settings.useOpenAiApiConfig) {
-      if (!settings.openAiApiBaseUrl.trim() || !settings.openAiCognitoModelId.trim() || !settings.openAiMuseModelId.trim()) {
-        missingKeyMsg = "OpenAI API 配置不完整 (需要基地址和Cognito/Muse的模型ID)。请在设置中提供，或关闭“使用OpenAI API配置”。";
-      }
-    } else if (settings.useCustomApiConfig) {
-      if (!settings.customApiKey.trim()) {
-        missingKeyMsg = "自定义 Gemini API 密钥未在设置中提供。请在设置中输入密钥，或关闭“使用自定义API配置”。";
-      }
-    } else {
-      if (!(process.env.API_KEY && process.env.API_KEY.trim() !== "")) {
-        missingKeyMsg = "Google Gemini API 密钥未在环境变量中配置。请配置该密钥，或在设置中启用并提供自定义API配置。";
-      }
-    }
-
-    if (missingKeyMsg) {
-      const fullWarning = `严重警告：${missingKeyMsg} 在此之前，应用程序功能将受限。`;
-      addMessage(fullWarning, MessageSender.System, MessagePurpose.SystemNotification);
-      setApiKeyStatus({ isMissing: true, message: missingKeyMsg });
-    } else {
-      const welcomeText = getWelcomeMessageText(
-        settings.actualCognitoModelDetails.name,
-        settings.actualMuseModelDetails.name,
-        settings.discussionMode,
-        settings.manualFixedTurns,
-        settings.useOpenAiApiConfig,
-        settings.openAiCognitoModelId,
-        settings.openAiMuseModelId
-      );
-      
-      // If we are clearing, we always add the welcome message.
-      // If we are NOT clearing (restoring), we only add it if the chat is empty.
+    if (configIssue) {
+      const warningText = `严重警告：${configIssue.message} 在此之前，应用程序功能将受限。`;
       if (shouldClear || messagesRef.current.length === 0) {
-        addMessage(welcomeText, MessageSender.System, MessagePurpose.SystemNotification);
+        addMessage(warningText, MessageSender.System, MessagePurpose.SystemNotification);
       }
+      return;
     }
-  }, [
-    addMessage, notepad, ui, settings
-  ]);
 
-  // Initial setup and re-initialization on API config change
-  // We pass false to initializeChat to attempt to keep history on reload/settings change
+    const welcomeText = getWelcomeMessageText(
+      settings.discussionMode,
+      settings.manualFixedTurns,
+      settings.cognitoConfig,
+      settings.museConfig
+    );
+
+    if (shouldClear || messagesRef.current.length === 0) {
+      addMessage(welcomeText, MessageSender.System, MessagePurpose.SystemNotification);
+    }
+  }, [addMessage, configIssue, notepad, settings, ui]);
+
   useEffect(() => {
     initializeChat(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.useCustomApiConfig, settings.useOpenAiApiConfig]);
+  }, []);
 
-  // Update Welcome Message on settings change
   useEffect(() => {
-    const welcomeMessage = messages.find(msg => msg.sender === MessageSender.System && msg.text.startsWith("Dual AI Chat 已就绪"));
+    const welcomeMessage = messages.find(
+      (message) => message.sender === MessageSender.System && message.text.startsWith('Dual AI Chat 已就绪')
+    );
+
     if (welcomeMessage && !apiKeyStatus.isMissing && !apiKeyStatus.isInvalid) {
-      setMessages(msgs => msgs.map(msg =>
-        msg.id === welcomeMessage.id
+      setMessages((currentMessages) => currentMessages.map((message) =>
+        message.id === welcomeMessage.id
           ? {
-            ...msg, text: getWelcomeMessageText(
-              settings.actualCognitoModelDetails.name,
-              settings.actualMuseModelDetails.name,
+            ...message,
+            text: getWelcomeMessageText(
               settings.discussionMode,
               settings.manualFixedTurns,
-              settings.useOpenAiApiConfig,
-              settings.openAiCognitoModelId,
-              settings.openAiMuseModelId
-            )
+              settings.cognitoConfig,
+              settings.museConfig
+            ),
           }
-          : msg
+          : message
       ));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.actualCognitoModelDetails.name, settings.actualMuseModelDetails.name, apiKeyStatus.isMissing, apiKeyStatus.isInvalid, settings.discussionMode, settings.manualFixedTurns, settings.useOpenAiApiConfig, settings.openAiCognitoModelId, settings.openAiMuseModelId]);
+  }, [
+    apiKeyStatus.isInvalid,
+    apiKeyStatus.isMissing,
+    settings.discussionMode,
+    settings.manualFixedTurns,
+    settings.cognitoConfig,
+    settings.museConfig,
+  ]);
 
-  // Timer Update
   useEffect(() => {
     let intervalId: number | undefined;
     if (chat.isLoading && ui.currentQueryStartTimeRef.current) {
@@ -200,7 +200,6 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
     };
   }, [chat.isLoading, ui.updateProcessingTimer, ui.currentQueryStartTimeRef, chat.cancelRequestRef]);
 
-  // Global Keyboard Events
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && ui.isNotepadFullscreen) {
@@ -220,24 +219,10 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
     if (chat.isLoading) {
       chat.stopGenerating();
     }
-    // Explicitly pass true to clear data when user clicks clear
     initializeChat(true);
   }, [chat, initializeChat]);
 
-  const apiKeyBannerMessage = useMemo(() => {
-    if (!apiKeyStatus.message) return null;
-    if (settings.useOpenAiApiConfig) {
-      if (apiKeyStatus.isMissing) return "OpenAI API 配置不完整 (需基地址和Cognito/Muse模型ID)。请在设置中提供，或关闭 OpenAI API 配置。";
-      if (apiKeyStatus.isInvalid) return "提供的 OpenAI API 密钥无效或无法访问服务。请检查设置和网络。";
-    } else if (settings.useCustomApiConfig) {
-      if (apiKeyStatus.isMissing) return "自定义 Gemini API 密钥缺失。请在设置中提供，或关闭自定义 Gemini API 配置。";
-      if (apiKeyStatus.isInvalid) return "提供的自定义 Gemini API 密钥无效或权限不足。请检查设置中的密钥。";
-    } else {
-      if (apiKeyStatus.isMissing) return "环境变量中的 Google Gemini API 密钥缺失。请配置，或启用自定义 API 配置。";
-      if (apiKeyStatus.isInvalid) return "环境变量中的 Google Gemini API 密钥无效或权限不足。请检查该密钥。";
-    }
-    return apiKeyStatus.message;
-  }, [apiKeyStatus, settings.useCustomApiConfig, settings.useOpenAiApiConfig]);
+  const apiKeyBannerMessage = useMemo(() => apiKeyStatus.message || null, [apiKeyStatus.message]);
 
   return {
     messages,
@@ -251,6 +236,6 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
       initializeChat,
       handleClearChat,
       addMessage,
-    }
+    },
   };
 };

@@ -87,6 +87,15 @@ export interface AiModel {
   supportsSystemInstruction?: boolean;
 }
 
+export type AiProvider = 'gemini' | 'openai-compatible';
+
+export interface AiRoleConfig {
+  provider: AiProvider;
+  apiKey: string;
+  baseUrl: string;
+  modelId: string;
+}
+
 export interface MutableRefObject<T> {
   current: T;
 }
@@ -105,17 +114,8 @@ export interface ChatLogicCommonDependencies {
   cognitoModelDetails: AiModel;
   museModelDetails: AiModel;
 
-  // Gemini Custom Config
-  useCustomApiConfig: boolean;
-  customApiKey: string;
-  customApiEndpoint: string;
-
-  // OpenAI Custom Config
-  useOpenAiApiConfig: boolean;
-  openAiApiKey: string;
-  openAiApiBaseUrl: string;
-  openAiCognitoModelId: string;
-  openAiMuseModelId: string;
+  cognitoConfig: AiRoleConfig;
+  museConfig: AiRoleConfig;
 
   // Shared Settings
   discussionMode: DiscussionMode;

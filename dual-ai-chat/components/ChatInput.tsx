@@ -153,7 +153,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
           onDrop={handleDrop}
           onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
           onDragLeave={(e) => { e.preventDefault(); setIsDraggingOver(false); }}
-          placeholder={isApiKeyMissing ? "缺少 API 密钥" : "给 Dual AI 发送消息..."}
+          placeholder={isApiKeyMissing ? "请先完成 AI 配置" : "给 Dual AI 发送消息..."}
           rows={1}
           className="w-full bg-transparent border-0 focus:ring-0 text-slate-700 placeholder-slate-400 px-1 py-1 resize-none max-h-[200px] min-h-[24px] text-base leading-relaxed custom-scrollbar outline-none"
           disabled={isLoading || isApiKeyMissing}
@@ -197,7 +197,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
       {isApiKeyMissing && (
         <div className="text-center mt-2 animate-in fade-in slide-in-from-bottom-2">
            <p className="text-[10px] text-slate-400 bg-white/50 inline-block px-2 py-0.5 rounded-full border border-slate-100">
-              请在设置中配置 API 密钥以开始。
+              请在设置中完成 AI 配置后再开始。
            </p>
         </div>
       )}

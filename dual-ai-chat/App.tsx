@@ -26,15 +26,8 @@ const App: React.FC = () => {
     <div className={`flex flex-col h-screen bg-slate-50 overflow-hidden ${ui.isNotepadFullscreen ? 'fixed inset-0 z-40' : 'relative'}`}>
       <Header
         isNotepadFullscreen={ui.isNotepadFullscreen}
-        useOpenAiApiConfig={settings.useOpenAiApiConfig}
-        openAiCognitoModelId={settings.openAiCognitoModelId}
-        openAiMuseModelId={settings.openAiMuseModelId}
-        actualCognitoModelDetails={settings.actualCognitoModelDetails}
-        actualMuseModelDetails={settings.actualMuseModelDetails}
-        selectedCognitoModelApiName={settings.selectedCognitoModelApiName}
-        setSelectedCognitoModelApiName={settings.setSelectedCognitoModelApiName}
-        selectedMuseModelApiName={settings.selectedMuseModelApiName}
-        setSelectedMuseModelApiName={settings.setSelectedMuseModelApiName}
+        cognitoConfig={settings.cognitoConfig}
+        museConfig={settings.museConfig}
         isLoading={chat.isLoading}
         cancelRequestRef={chat.cancelRequestRef}
         failedStepInfo={chat.failedStepInfo}

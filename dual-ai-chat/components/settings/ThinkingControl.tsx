@@ -20,8 +20,12 @@ export const ThinkingControl: React.FC<ThinkingControlProps> = ({
   setThinkingLevel,
   disabled
 }) => {
-  const isGemini3 = GEMINI_3_RO_MODELS.includes(modelId) || modelId.includes('gemini-3-pro');
-  const budgetConfig = THINKING_BUDGET_RANGES[modelId];
+  const normalizedModelId = modelId.trim().toLowerCase();
+  const isGemini3 = GEMINI_3_RO_MODELS.includes(modelId) || normalizedModelId.startsWith('gemini-3');
+  const budgetConfig = THINKING_BUDGET_RANGES[modelId]
+    || (normalizedModelId.includes('gemini-2.5-flash-lite') ? { min: 512, max: 24576 } : undefined)
+    || (normalizedModelId.includes('gemini-2.5-flash') ? { min: 1024, max: 24576 } : undefined)
+    || (normalizedModelId.startsWith('gemini-2.5') || normalizedModelId.startsWith('gemini-3') ? { min: 128, max: 32768 } : undefined);
   
   const [customBudgetValue, setCustomBudgetValue] = useState(
     thinkingBudget > 0 ? String(thinkingBudget) : '1024'

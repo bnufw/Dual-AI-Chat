@@ -1,13 +1,15 @@
-
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   MODELS,
   AiModel,
   DEFAULT_COGNITO_MODEL_API_NAME,
   DEFAULT_MUSE_MODEL_API_NAME,
+  DEFAULT_GEMINI_API_BASE_URL,
   COGNITO_SYSTEM_PROMPT_HEADER,
   MUSE_SYSTEM_PROMPT_HEADER,
   DEFAULT_MANUAL_FIXED_TURNS,
+  COGNITO_ROLE_CONFIG_STORAGE_KEY,
+  MUSE_ROLE_CONFIG_STORAGE_KEY,
   CUSTOM_API_ENDPOINT_STORAGE_KEY,
   CUSTOM_API_KEY_STORAGE_KEY,
   USE_CUSTOM_API_CONFIG_STORAGE_KEY,
@@ -28,36 +30,129 @@ import {
   DEFAULT_THINKING_BUDGET,
   DEFAULT_THINKING_LEVEL,
 } from '../constants';
-import { DiscussionMode } from '../types';
+import { AiProvider, AiRoleConfig, DiscussionMode } from '../types';
 
 const FONT_SIZE_STORAGE_KEY = 'dualAiChatFontSizeScale';
 const DEFAULT_FONT_SIZE_SCALE = 0.875;
-const DEFAULT_GEMINI_CUSTOM_API_ENDPOINT = 'https://generativelanguage.googleapis.com';
+
+type RoleKey = 'cognito' | 'muse';
+
+const DEFAULT_ROLE_CONFIGS: Record<RoleKey, AiRoleConfig> = {
+  cognito: {
+    provider: 'gemini',
+    apiKey: '',
+    baseUrl: DEFAULT_GEMINI_API_BASE_URL,
+    modelId: DEFAULT_COGNITO_MODEL_API_NAME,
+  },
+  muse: {
+    provider: 'gemini',
+    apiKey: '',
+    baseUrl: DEFAULT_GEMINI_API_BASE_URL,
+    modelId: DEFAULT_MUSE_MODEL_API_NAME,
+  },
+};
+
+const isAiProvider = (value: unknown): value is AiProvider =>
+  value === 'gemini' || value === 'openai-compatible';
+
+const getDefaultRoleConfig = (role: RoleKey): AiRoleConfig => ({
+  ...DEFAULT_ROLE_CONFIGS[role],
+});
+
+const getDefaultBaseUrl = (provider: AiProvider) =>
+  provider === 'gemini' ? DEFAULT_GEMINI_API_BASE_URL : DEFAULT_OPENAI_API_BASE_URL;
+
+const getDefaultModelId = (role: RoleKey, provider: AiProvider) => {
+  if (provider === 'gemini') {
+    return role === 'cognito' ? DEFAULT_COGNITO_MODEL_API_NAME : DEFAULT_MUSE_MODEL_API_NAME;
+  }
+  return role === 'cognito' ? DEFAULT_OPENAI_COGNITO_MODEL_ID : DEFAULT_OPENAI_MUSE_MODEL_ID;
+};
+
+const normalizeRoleConfig = (role: RoleKey, config: Partial<AiRoleConfig>): AiRoleConfig => {
+  const provider = isAiProvider(config.provider) ? config.provider : getDefaultRoleConfig(role).provider;
+  return {
+    provider,
+    apiKey: typeof config.apiKey === 'string' ? config.apiKey : '',
+    baseUrl: typeof config.baseUrl === 'string' && config.baseUrl.trim()
+      ? config.baseUrl
+      : getDefaultBaseUrl(provider),
+    modelId: typeof config.modelId === 'string' ? config.modelId : getDefaultModelId(role, provider),
+  };
+};
+
+const parseStoredRoleConfig = (role: RoleKey, storageKey: string): AiRoleConfig | null => {
+  const raw = localStorage.getItem(storageKey);
+  if (!raw) return null;
+
+  try {
+    return normalizeRoleConfig(role, JSON.parse(raw));
+  } catch (error) {
+    console.error(`Failed to parse stored ${role} config`, error);
+    return null;
+  }
+};
+
+const getMigratedLegacyRoleConfig = (role: RoleKey): AiRoleConfig => {
+  const legacyOpenAiEnabled = localStorage.getItem(USE_OPENAI_API_CONFIG_STORAGE_KEY) === 'true';
+  const legacyGeminiEnabled = localStorage.getItem(USE_CUSTOM_API_CONFIG_STORAGE_KEY) === 'true';
+
+  if (legacyOpenAiEnabled) {
+    return {
+      provider: 'openai-compatible',
+      apiKey: localStorage.getItem(OPENAI_API_KEY_STORAGE_KEY) || '',
+      baseUrl: localStorage.getItem(OPENAI_API_BASE_URL_STORAGE_KEY) || DEFAULT_OPENAI_API_BASE_URL,
+      modelId: role === 'cognito'
+        ? localStorage.getItem(OPENAI_COGNITO_MODEL_ID_STORAGE_KEY) || DEFAULT_OPENAI_COGNITO_MODEL_ID
+        : localStorage.getItem(OPENAI_MUSE_MODEL_ID_STORAGE_KEY) || DEFAULT_OPENAI_MUSE_MODEL_ID,
+    };
+  }
+
+  if (legacyGeminiEnabled) {
+    return {
+      provider: 'gemini',
+      apiKey: localStorage.getItem(CUSTOM_API_KEY_STORAGE_KEY) || '',
+      baseUrl: localStorage.getItem(CUSTOM_API_ENDPOINT_STORAGE_KEY) || DEFAULT_GEMINI_API_BASE_URL,
+      modelId: getDefaultModelId(role, 'gemini'),
+    };
+  }
+
+  return getDefaultRoleConfig(role);
+};
+
+const getInitialRoleConfig = (role: RoleKey, storageKey: string): AiRoleConfig =>
+  parseStoredRoleConfig(role, storageKey) || getMigratedLegacyRoleConfig(role);
+
+const buildRoleModelDetails = (role: RoleKey, config: AiRoleConfig): AiModel => {
+  const modelId = config.modelId.trim();
+  const providerLabel = config.provider === 'gemini' ? 'Gemini' : 'OpenAI 兼容';
+  const normalizedModelId = modelId.toLowerCase();
+  const knownModel = config.provider === 'gemini'
+    ? MODELS.find((model) => model.apiName === modelId)
+    : undefined;
+  const supportsGeminiThinking = config.provider === 'gemini'
+    && (knownModel?.supportsThinkingConfig
+      || normalizedModelId.startsWith('gemini-2.5')
+      || normalizedModelId.startsWith('gemini-3'));
+  const roleLabel = role === 'cognito' ? 'Cognito' : 'Muse';
+
+  return {
+    id: `${role}-${config.provider}`,
+    name: `${roleLabel} / ${providerLabel} / ${modelId || '未指定'}`,
+    apiName: modelId,
+    supportsThinkingConfig: supportsGeminiThinking,
+    supportsSystemInstruction: true,
+  };
+};
 
 export const useSettings = () => {
-  // Gemini Custom API Config State
-  const [useCustomApiConfig, setUseCustomApiConfig] = useState<boolean>(() => {
-    const storedValue = localStorage.getItem(USE_CUSTOM_API_CONFIG_STORAGE_KEY);
-    return storedValue ? storedValue === 'true' : false;
-  });
-  const [customApiEndpoint, setCustomApiEndpoint] = useState<string>(() => localStorage.getItem(CUSTOM_API_ENDPOINT_STORAGE_KEY) || DEFAULT_GEMINI_CUSTOM_API_ENDPOINT);
-  const [customApiKey, setCustomApiKey] = useState<string>(() => localStorage.getItem(CUSTOM_API_KEY_STORAGE_KEY) || '');
+  const [cognitoConfig, setCognitoConfig] = useState<AiRoleConfig>(() =>
+    getInitialRoleConfig('cognito', COGNITO_ROLE_CONFIG_STORAGE_KEY)
+  );
+  const [museConfig, setMuseConfig] = useState<AiRoleConfig>(() =>
+    getInitialRoleConfig('muse', MUSE_ROLE_CONFIG_STORAGE_KEY)
+  );
 
-  // OpenAI-Compatible API Config State
-  const [useOpenAiApiConfig, setUseOpenAiApiConfig] = useState<boolean>(() => {
-    const storedValue = localStorage.getItem(USE_OPENAI_API_CONFIG_STORAGE_KEY);
-    // If Gemini custom config was already enabled from old storage, default OpenAI to false.
-    if (useCustomApiConfig && storedValue === null) return false;
-    return storedValue ? storedValue === 'true' : false;
-  });
-  const [openAiApiBaseUrl, setOpenAiApiBaseUrl] = useState<string>(() => localStorage.getItem(OPENAI_API_BASE_URL_STORAGE_KEY) || DEFAULT_OPENAI_API_BASE_URL);
-  const [openAiApiKey, setOpenAiApiKey] = useState<string>(() => localStorage.getItem(OPENAI_API_KEY_STORAGE_KEY) || '');
-  const [openAiCognitoModelId, setOpenAiCognitoModelId] = useState<string>(() => localStorage.getItem(OPENAI_COGNITO_MODEL_ID_STORAGE_KEY) || DEFAULT_OPENAI_COGNITO_MODEL_ID);
-  const [openAiMuseModelId, setOpenAiMuseModelId] = useState<string>(() => localStorage.getItem(OPENAI_MUSE_MODEL_ID_STORAGE_KEY) || DEFAULT_OPENAI_MUSE_MODEL_ID);
-
-  // General Settings
-  const [selectedCognitoModelApiName, setSelectedCognitoModelApiName] = useState<string>(DEFAULT_COGNITO_MODEL_API_NAME);
-  const [selectedMuseModelApiName, setSelectedMuseModelApiName] = useState<string>(DEFAULT_MUSE_MODEL_API_NAME);
   const [discussionMode, setDiscussionMode] = useState<DiscussionMode>(DiscussionMode.AiDriven);
   const [manualFixedTurns, setManualFixedTurns] = useState<number>(DEFAULT_MANUAL_FIXED_TURNS);
   const [cognitoSystemPrompt, setCognitoSystemPrompt] = useState<string>(COGNITO_SYSTEM_PROMPT_HEADER);
@@ -67,20 +162,18 @@ export const useSettings = () => {
     return storedScale ? parseFloat(storedScale) : DEFAULT_FONT_SIZE_SCALE;
   });
 
-  // Thinking Configuration - Separate for Cognito and Muse
-  // Fallback to general keys if specific ones aren't found for migration
   const [cognitoThinkingBudget, setCognitoThinkingBudget] = useState<number>(() => {
     const stored = localStorage.getItem(COGNITO_THINKING_BUDGET_STORAGE_KEY);
     if (stored) return parseInt(stored, 10);
     const legacy = localStorage.getItem(THINKING_BUDGET_STORAGE_KEY);
     return legacy ? parseInt(legacy, 10) : DEFAULT_THINKING_BUDGET;
   });
-  
+
   const [cognitoThinkingLevel, setCognitoThinkingLevel] = useState<'LOW' | 'HIGH'>(() => {
     const stored = localStorage.getItem(COGNITO_THINKING_LEVEL_STORAGE_KEY);
     if (stored === 'LOW' || stored === 'HIGH') return stored;
     const legacy = localStorage.getItem(THINKING_LEVEL_STORAGE_KEY);
-    return (legacy === 'LOW' || legacy === 'HIGH') ? legacy : DEFAULT_THINKING_LEVEL;
+    return legacy === 'LOW' || legacy === 'HIGH' ? legacy : DEFAULT_THINKING_LEVEL;
   });
 
   const [museThinkingBudget, setMuseThinkingBudget] = useState<number>(() => {
@@ -89,24 +182,21 @@ export const useSettings = () => {
     const legacy = localStorage.getItem(THINKING_BUDGET_STORAGE_KEY);
     return legacy ? parseInt(legacy, 10) : DEFAULT_THINKING_BUDGET;
   });
-  
+
   const [museThinkingLevel, setMuseThinkingLevel] = useState<'LOW' | 'HIGH'>(() => {
     const stored = localStorage.getItem(MUSE_THINKING_LEVEL_STORAGE_KEY);
     if (stored === 'LOW' || stored === 'HIGH') return stored;
     const legacy = localStorage.getItem(THINKING_LEVEL_STORAGE_KEY);
-    return (legacy === 'LOW' || legacy === 'HIGH') ? legacy : DEFAULT_THINKING_LEVEL;
+    return legacy === 'LOW' || legacy === 'HIGH' ? legacy : DEFAULT_THINKING_LEVEL;
   });
 
-  // Persistence Effects
-  useEffect(() => { localStorage.setItem(USE_CUSTOM_API_CONFIG_STORAGE_KEY, useCustomApiConfig.toString()); }, [useCustomApiConfig]);
-  useEffect(() => { localStorage.setItem(CUSTOM_API_ENDPOINT_STORAGE_KEY, customApiEndpoint); }, [customApiEndpoint]);
-  useEffect(() => { localStorage.setItem(CUSTOM_API_KEY_STORAGE_KEY, customApiKey); }, [customApiKey]);
+  useEffect(() => {
+    localStorage.setItem(COGNITO_ROLE_CONFIG_STORAGE_KEY, JSON.stringify(cognitoConfig));
+  }, [cognitoConfig]);
 
-  useEffect(() => { localStorage.setItem(USE_OPENAI_API_CONFIG_STORAGE_KEY, useOpenAiApiConfig.toString()); }, [useOpenAiApiConfig]);
-  useEffect(() => { localStorage.setItem(OPENAI_API_BASE_URL_STORAGE_KEY, openAiApiBaseUrl); }, [openAiApiBaseUrl]);
-  useEffect(() => { localStorage.setItem(OPENAI_API_KEY_STORAGE_KEY, openAiApiKey); }, [openAiApiKey]);
-  useEffect(() => { localStorage.setItem(OPENAI_COGNITO_MODEL_ID_STORAGE_KEY, openAiCognitoModelId); }, [openAiCognitoModelId]);
-  useEffect(() => { localStorage.setItem(OPENAI_MUSE_MODEL_ID_STORAGE_KEY, openAiMuseModelId); }, [openAiMuseModelId]);
+  useEffect(() => {
+    localStorage.setItem(MUSE_ROLE_CONFIG_STORAGE_KEY, JSON.stringify(museConfig));
+  }, [museConfig]);
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSizeScale * 100}%`;
@@ -118,83 +208,59 @@ export const useSettings = () => {
   useEffect(() => { localStorage.setItem(MUSE_THINKING_BUDGET_STORAGE_KEY, museThinkingBudget.toString()); }, [museThinkingBudget]);
   useEffect(() => { localStorage.setItem(MUSE_THINKING_LEVEL_STORAGE_KEY, museThinkingLevel); }, [museThinkingLevel]);
 
-  // Handlers
-  const handleUseCustomGeminiApiConfigChange = useCallback(() => {
-    const newValue = !useCustomApiConfig;
-    setUseCustomApiConfig(newValue);
-    if (newValue && useOpenAiApiConfig) {
-      setUseOpenAiApiConfig(false);
-    }
-  }, [useCustomApiConfig, useOpenAiApiConfig]);
+  const updateRoleConfig = useCallback((role: RoleKey, patch: Partial<AiRoleConfig>) => {
+    const setter = role === 'cognito' ? setCognitoConfig : setMuseConfig;
+    setter((current) => {
+      const nextProvider = isAiProvider(patch.provider) ? patch.provider : current.provider;
+      const providerChanged = nextProvider !== current.provider;
+      const nextBaseUrl = typeof patch.baseUrl === 'string'
+        ? patch.baseUrl
+        : providerChanged && (!current.baseUrl.trim() || current.baseUrl === getDefaultBaseUrl(current.provider))
+          ? getDefaultBaseUrl(nextProvider)
+          : current.baseUrl;
+      const nextModelId = typeof patch.modelId === 'string'
+        ? patch.modelId
+        : providerChanged && (!current.modelId.trim() || current.modelId === getDefaultModelId(role, current.provider))
+          ? getDefaultModelId(role, nextProvider)
+          : current.modelId;
 
-  const handleUseOpenAiApiConfigChange = useCallback(() => {
-    const newValue = !useOpenAiApiConfig;
-    setUseOpenAiApiConfig(newValue);
-    if (newValue && useCustomApiConfig) {
-      setUseCustomApiConfig(false);
-    }
-  }, [useOpenAiApiConfig, useCustomApiConfig]);
-
-  // Derived State
-  const actualCognitoModelDetails: AiModel = useMemo(() => {
-    if (useOpenAiApiConfig) {
       return {
-        id: 'openai-cognito',
-        name: `OpenAI Cognito: ${openAiCognitoModelId || '未指定'}`,
-        apiName: openAiCognitoModelId || DEFAULT_OPENAI_COGNITO_MODEL_ID,
-        supportsThinkingConfig: false,
-        supportsSystemInstruction: true,
+        provider: nextProvider,
+        apiKey: typeof patch.apiKey === 'string' ? patch.apiKey : current.apiKey,
+        baseUrl: nextBaseUrl,
+        modelId: nextModelId,
       };
-    }
-    return MODELS.find(m => m.apiName === selectedCognitoModelApiName) || MODELS[0];
-  }, [useOpenAiApiConfig, openAiCognitoModelId, selectedCognitoModelApiName]);
+    });
+  }, []);
 
-  const actualMuseModelDetails: AiModel = useMemo(() => {
-    if (useOpenAiApiConfig) {
-      return {
-        id: 'openai-muse',
-        name: `OpenAI Muse: ${openAiMuseModelId || '未指定'}`,
-        apiName: openAiMuseModelId || DEFAULT_OPENAI_MUSE_MODEL_ID,
-        supportsThinkingConfig: false,
-        supportsSystemInstruction: true,
-      };
-    }
-    return MODELS.find(m => m.apiName === selectedMuseModelApiName) || MODELS[0];
-  }, [useOpenAiApiConfig, openAiMuseModelId, selectedMuseModelApiName]);
+  const actualCognitoModelDetails = useMemo(
+    () => buildRoleModelDetails('cognito', cognitoConfig),
+    [cognitoConfig]
+  );
+
+  const actualMuseModelDetails = useMemo(
+    () => buildRoleModelDetails('muse', museConfig),
+    [museConfig]
+  );
 
   return {
-    // Gemini Custom
-    useCustomApiConfig,
-    customApiEndpoint, setCustomApiEndpoint,
-    customApiKey, setCustomApiKey,
-    handleUseCustomGeminiApiConfigChange,
+    cognitoConfig,
+    museConfig,
+    updateCognitoConfig: (patch: Partial<AiRoleConfig>) => updateRoleConfig('cognito', patch),
+    updateMuseConfig: (patch: Partial<AiRoleConfig>) => updateRoleConfig('muse', patch),
 
-    // OpenAI Custom
-    useOpenAiApiConfig,
-    openAiApiBaseUrl, setOpenAiApiBaseUrl,
-    openAiApiKey, setOpenAiApiKey,
-    openAiCognitoModelId, setOpenAiCognitoModelId,
-    openAiMuseModelId, setOpenAiMuseModelId,
-    handleUseOpenAiApiConfigChange,
-
-    // Models & Discussion
-    selectedCognitoModelApiName, setSelectedCognitoModelApiName,
-    selectedMuseModelApiName, setSelectedMuseModelApiName,
     discussionMode, setDiscussionMode,
     manualFixedTurns, setManualFixedTurns,
     cognitoSystemPrompt, setCognitoSystemPrompt,
     museSystemPrompt, setMuseSystemPrompt,
-    
-    // Thinking Config
+
     cognitoThinkingBudget, setCognitoThinkingBudget,
     cognitoThinkingLevel, setCognitoThinkingLevel,
     museThinkingBudget, setMuseThinkingBudget,
     museThinkingLevel, setMuseThinkingLevel,
-    
-    // Appearance
+
     fontSizeScale, setFontSizeScale,
 
-    // Derived
     actualCognitoModelDetails,
     actualMuseModelDetails,
   };

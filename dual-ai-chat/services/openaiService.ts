@@ -1,76 +1,85 @@
+import { DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT } from '../constants';
+import { AiResponsePayload } from '../types';
 
-import { AiResponsePayload } from "../types";
+const buildOpenAiResponsesInput = (
+  prompt: string,
+  imagePart?: { mimeType: string; data: string }
+) => {
+  if (!imagePart) return prompt;
 
-interface OpenAiMessageContentPartText {
-  type: 'text';
-  text: string;
-}
-interface OpenAiMessageContentPartImage {
-  type: 'image_url';
-  image_url: {
-    url: string;
-    detail?: 'low' | 'high' | 'auto';
-  };
-}
-type OpenAiMessageContentPart = OpenAiMessageContentPartText | OpenAiMessageContentPartImage;
+  return [
+    {
+      role: 'user',
+      content: [
+        { type: 'input_text', text: prompt },
+        {
+          type: 'input_image',
+          image_url: {
+            url: `data:${imagePart.mimeType};base64,${imagePart.data}`,
+          },
+        },
+      ],
+    },
+  ];
+};
 
+const extractResponseText = (data: any) => {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
+    return data.output_text;
+  }
 
-interface OpenAiChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string | Array<OpenAiMessageContentPart>;
-}
+  if (!Array.isArray(data?.output)) return '';
+
+  return data.output
+    .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .filter((content: any) => content?.type === 'output_text' && typeof content.text === 'string')
+    .map((content: any) => content.text)
+    .join('');
+};
 
 export const generateOpenAiResponse = async (
-  prompt: string, // This will be the main user content for the 'user' role message
+  prompt: string,
   modelId: string,
   apiKey: string,
   baseUrl: string,
   systemInstruction?: string,
-  imagePart?: { mimeType: string; data: string }, // Base64 data and mimeType
+  imagePart?: { mimeType: string; data: string },
   signal?: AbortSignal
 ): Promise<AiResponsePayload> => {
   const startTime = performance.now();
-  const messages: OpenAiChatMessage[] = [];
+  const resolvedApiKey = apiKey.trim();
 
-  if (systemInstruction) {
-    messages.push({ role: 'system', content: systemInstruction });
+  if (!resolvedApiKey) {
+    return {
+      text: 'API 密钥未在设置中提供。',
+      durationMs: performance.now() - startTime,
+      error: 'API key not configured',
+    };
   }
 
-  let userMessageContent: string | Array<OpenAiMessageContentPart>;
-  if (imagePart && imagePart.data) {
-    userMessageContent = [
-      { type: 'text', text: prompt },
-      {
-        type: 'image_url',
-        image_url: {
-          url: `data:${imagePart.mimeType};base64,${imagePart.data}`,
-          // detail: 'auto' // Optional: you can add detail if needed
-        },
-      },
-    ];
-  } else {
-    userMessageContent = prompt;
-  }
-  messages.push({ role: 'user', content: userMessageContent });
-
-  const requestBody = {
+  const requestBody: Record<string, unknown> = {
     model: modelId,
-    messages: messages,
-    // max_tokens: 1024, // Optional: Set a default or make it configurable
-    // temperature: 0.7, // Optional
+    input: buildOpenAiResponsesInput(prompt, imagePart),
+    reasoning: {
+      effort: DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT,
+    },
   };
 
+  if (systemInstruction) {
+    requestBody.instructions = systemInstruction;
+  }
+
   try {
-    // Check if already aborted before fetching
     if (signal?.aborted) {
-        throw new DOMException('Aborted', 'AbortError');
+      throw new DOMException('Aborted', 'AbortError');
     }
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const endpoint = `${baseUrl.replace(/\/+$/, '')}/responses`;
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${resolvedApiKey}`,
       },
       body: JSON.stringify(requestBody),
       signal,
@@ -79,50 +88,50 @@ export const generateOpenAiResponse = async (
     const durationMs = performance.now() - startTime;
 
     if (!response.ok) {
-      let errorBody;
+      let errorBody: any;
       try {
         errorBody = await response.json();
-      } catch (e) {
-        // If parsing error body fails, use status text
+      } catch (error) {
+        errorBody = null;
       }
+
       const errorMessage =
-        errorBody?.error?.message ||
-        response.statusText ||
-        `请求失败，状态码: ${response.status}`;
-        
-      let errorType = "OpenAI API error";
+        errorBody?.error?.message
+        || response.statusText
+        || `请求失败，状态码: ${response.status}`;
+
+      let errorType = 'OpenAI API error';
       if (response.status === 401 || response.status === 403) {
-        errorType = "API key invalid or permission denied";
+        errorType = 'API key invalid or permission denied';
       } else if (response.status === 429) {
-        errorType = "Quota exceeded";
+        errorType = 'Quota exceeded';
       }
-      console.error("OpenAI API Error:", errorMessage, "Status:", response.status, "Body:", errorBody);
+
+      console.error('OpenAI Responses API Error:', errorMessage, 'Status:', response.status, 'Body:', errorBody);
       return { text: errorMessage, durationMs, error: errorType };
     }
 
     const data = await response.json();
+    const text = extractResponseText(data);
 
-    if (!data.choices || data.choices.length === 0 || !data.choices[0].message || !data.choices[0].message.content) {
-      console.error("OpenAI API: 无效的响应结构", data);
-      return { text: "AI响应格式无效。", durationMs, error: "Invalid response structure" };
+    if (!text) {
+      console.error('OpenAI Responses API: invalid response structure', data);
+      return { text: 'AI响应格式无效。', durationMs, error: 'Invalid response structure' };
     }
 
-    return { text: data.choices[0].message.content, durationMs };
-
+    return { text, durationMs };
   } catch (error) {
     if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
-      const durationMs = performance.now() - startTime;
-      return { text: "用户取消操作", durationMs, error: "AbortError" };
+      return { text: '用户取消操作', durationMs: performance.now() - startTime, error: 'AbortError' };
     }
 
-    console.error("调用OpenAI API时出错:", error);
+    console.error('调用OpenAI Responses API时出错:', error);
     const durationMs = performance.now() - startTime;
-    let errorMessage = "与AI通信时发生未知错误。";
-    let errorType = "Unknown AI error";
+
     if (error instanceof Error) {
-      errorMessage = `与AI通信时出错: ${error.message}`;
-      errorType = error.name;
+      return { text: `与AI通信时出错: ${error.message}`, durationMs, error: error.name };
     }
-    return { text: errorMessage, durationMs, error: errorType };
+
+    return { text: '与AI通信时发生未知错误。', durationMs, error: 'Unknown AI error' };
   }
 };
