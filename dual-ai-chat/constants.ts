@@ -170,4 +170,6 @@ export const MUSE_THINKING_LEVEL_STORAGE_KEY = 'dualAiChatMuseThinkingLevel';
 
 // Data Persistence Keys
 export const NOTEPAD_CONTENT_STORAGE_KEY = 'dualAiChatNotepadContent';
+export const NOTEPAD_HISTORY_STORAGE_KEY = 'dualAiChatNotepadHistory';
+export const NOTEPAD_HISTORY_INDEX_STORAGE_KEY = 'dualAiChatNotepadHistoryIndex';
 export const CHAT_MESSAGES_STORAGE_KEY = 'dualAiChatMessages';

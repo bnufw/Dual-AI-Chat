@@ -1,31 +1,86 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { MessageSender, NotepadUpdatePayload, MessagePurpose } from '../types'; // Added MessagePurpose
+import { MessageSender, MessagePurpose } from '../types';
 import { applyNotepadModifications, ParsedAIResponse } from '../utils/appUtils';
-import { INITIAL_NOTEPAD_CONTENT, NOTEPAD_CONTENT_STORAGE_KEY } from '../constants';
+import {
+  INITIAL_NOTEPAD_CONTENT,
+  NOTEPAD_CONTENT_STORAGE_KEY,
+  NOTEPAD_HISTORY_STORAGE_KEY,
+  NOTEPAD_HISTORY_INDEX_STORAGE_KEY,
+} from '../constants';
+
+type PersistedNotepadState = {
+  content: string;
+  history: string[];
+  historyIndex: number;
+};
+
+const parseStoredHistory = (rawHistory: string | null): string[] | null => {
+  if (!rawHistory) return null;
+  try {
+    const parsed = JSON.parse(rawHistory);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string') ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const getInitialNotepadState = (initialContent: string): PersistedNotepadState => {
+  const savedContent = localStorage.getItem(NOTEPAD_CONTENT_STORAGE_KEY);
+  const content = savedContent ?? initialContent;
+  const storedHistory = parseStoredHistory(localStorage.getItem(NOTEPAD_HISTORY_STORAGE_KEY));
+
+  if (!storedHistory || storedHistory.length === 0) {
+    return {
+      content,
+      history: [content],
+      historyIndex: 0,
+    };
+  }
+
+  const parsedIndex = Number(localStorage.getItem(NOTEPAD_HISTORY_INDEX_STORAGE_KEY));
+  let historyIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 && parsedIndex < storedHistory.length
+    ? parsedIndex
+    : storedHistory.length - 1;
+  let history = storedHistory;
+
+  if (history[historyIndex] !== content) {
+    history = [...history.slice(0, historyIndex + 1), content];
+    historyIndex = history.length - 1;
+  }
+
+  return {
+    content,
+    history,
+    historyIndex,
+  };
+};
 
 export const useNotepadLogic = (initialContent: string = INITIAL_NOTEPAD_CONTENT) => {
-  const [notepadContent, setNotepadContent] = useState<string>(() => {
-    const saved = localStorage.getItem(NOTEPAD_CONTENT_STORAGE_KEY);
-    return saved !== null ? saved : initialContent;
-  });
+  const [initialState] = useState<PersistedNotepadState>(() => getInitialNotepadState(initialContent));
+  const [notepadContent, setNotepadContent] = useState<string>(initialState.content);
   const [lastNotepadUpdateBy, setLastNotepadUpdateBy] = useState<MessageSender | null>(null);
   
-  const [notepadHistory, setNotepadHistory] = useState<string[]>(() => {
-    const saved = localStorage.getItem(NOTEPAD_CONTENT_STORAGE_KEY);
-    return saved !== null ? [saved] : [initialContent];
-  });
-  const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(0);
+  const [notepadHistory, setNotepadHistory] = useState<string[]>(initialState.history);
+  const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(initialState.historyIndex);
 
   // Persist notepad content changes
   useEffect(() => {
     localStorage.setItem(NOTEPAD_CONTENT_STORAGE_KEY, notepadContent);
   }, [notepadContent]);
 
+  useEffect(() => {
+    localStorage.setItem(NOTEPAD_HISTORY_STORAGE_KEY, JSON.stringify(notepadHistory));
+  }, [notepadHistory]);
+
+  useEffect(() => {
+    localStorage.setItem(NOTEPAD_HISTORY_INDEX_STORAGE_KEY, String(currentHistoryIndex));
+  }, [currentHistoryIndex]);
+
   // Derived state for comparison
   const previousContent = useMemo(() => {
-    return currentHistoryIndex > 0 ? notepadHistory[currentHistoryIndex - 1] : initialContent;
-  }, [currentHistoryIndex, notepadHistory, initialContent]);
+    return currentHistoryIndex > 0 ? notepadHistory[currentHistoryIndex - 1] : notepadContent;
+  }, [currentHistoryIndex, notepadHistory, notepadContent]);
 
   const _addHistoryEntry = useCallback((newContent: string, updatedBy: MessageSender | null) => {
     const newHistorySlice = notepadHistory.slice(0, currentHistoryIndex + 1);
