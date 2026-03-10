@@ -13,6 +13,27 @@ const parseJsonSafely = (rawText: string): any | null => {
   }
 };
 
+const getPayloadError = (payload: any) => {
+  if (!payload) return { code: '', message: '', label: '' };
+
+  const nestedError = payload.error;
+  if (typeof nestedError === 'string') {
+    return { code: '', message: '', label: nestedError.trim() };
+  }
+
+  if (nestedError && typeof nestedError === 'object') {
+    const code = typeof nestedError.code === 'string' ? nestedError.code.trim() : '';
+    const message = typeof nestedError.message === 'string' ? nestedError.message.trim() : '';
+    return {
+      code,
+      message,
+      label: message || code,
+    };
+  }
+
+  return { code: '', message: '', label: '' };
+};
+
 const buildFetchFailureMessage = () => [
   '与AI通信时出错: Failed to fetch',
   `请求地址: ${OPENAI_RESPONSES_API_PATH}`,
@@ -25,6 +46,13 @@ const buildLocalDevMissingApiMessage = () => [
   `请求地址: ${OPENAI_RESPONSES_API_PATH}`,
   '你现在很可能是通过纯 Vite 开发服务器打开页面，本地并没有启动 Vercel Python Function。',
   '如果要联调 OpenAI 兼容链路，请改用 `vercel dev`。',
+].join('\n');
+
+const buildDeploymentTimeoutMessage = () => [
+  '与AI通信时出错: Vercel Python 接口超时或部署层执行失败。',
+  `请求地址: ${OPENAI_RESPONSES_API_PATH}`,
+  '这通常意味着同源 Python Function 没能在 Vercel 的时间预算内完成上游 OpenAI 请求。',
+  '优先把 OpenAI 思考强度从 `xhigh` 降到 `high` 或 `medium`，再检查服务端 `OPENAI_COMPAT_BASE_URL` 的响应时间。',
 ].join('\n');
 
 export const generateOpenAiResponse = async (
@@ -58,12 +86,24 @@ export const generateOpenAiResponse = async (
 
     const rawBodyText = await response.text();
     const payload = parseJsonSafely(rawBodyText);
+    const payloadError = getPayloadError(payload);
     const durationMs = typeof payload?.durationMs === 'number'
       ? payload.durationMs
       : performance.now() - startTime;
     const hasHtmlBody = /<\s*html|<!doctype html/i.test(rawBodyText);
+    const isDeploymentTimeout = response.status === 504
+      || payloadError.code === '504'
+      || payloadError.message.toLowerCase().includes('deployment');
 
     if (!response.ok) {
+      if (isDeploymentTimeout) {
+        return {
+          text: buildDeploymentTimeoutMessage(),
+          durationMs,
+          error: payloadError.label || 'Deployment timeout',
+        };
+      }
+
       if (hasHtmlBody) {
         return {
           text: buildLocalDevMissingApiMessage(),
@@ -73,10 +113,10 @@ export const generateOpenAiResponse = async (
       }
       const text = typeof payload?.text === 'string' && payload.text.trim()
         ? payload.text
-        : rawBodyText.trim() || `请求失败，状态码: ${response.status}`;
+        : payloadError.message || rawBodyText.trim() || `请求失败，状态码: ${response.status}`;
       const error = typeof payload?.error === 'string' && payload.error.trim()
         ? payload.error
-        : `HTTP ${response.status}`;
+        : payloadError.label || `HTTP ${response.status}`;
       return { text, durationMs, error };
     }
 

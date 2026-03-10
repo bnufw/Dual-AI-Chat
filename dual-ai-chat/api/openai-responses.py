@@ -3,10 +3,12 @@ import os
 import time
 from http.server import BaseHTTPRequestHandler
 
-from openai import APIConnectionError, APIStatusError, AuthenticationError, OpenAI, RateLimitError
+from openai import APITimeoutError, APIConnectionError, APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
 DEFAULT_REASONING_EFFORT = os.getenv("OPENAI_COMPAT_REASONING_EFFORT", "xhigh")
 DEFAULT_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_COMPAT_MAX_OUTPUT_TOKENS", "6000"))
+DEFAULT_TIMEOUT_SECONDS = float(os.getenv("OPENAI_COMPAT_TIMEOUT_SECONDS", "45"))
+DEFAULT_MAX_RETRIES = int(os.getenv("OPENAI_COMPAT_MAX_RETRIES", "0"))
 
 
 def normalize_base_url(base_url: str) -> str:
@@ -54,6 +56,18 @@ def get_openai_settings(role: str) -> dict[str, str]:
     }
 
 
+def get_request_timeout_seconds() -> float:
+    if DEFAULT_TIMEOUT_SECONDS <= 0:
+        return 45.0
+    return DEFAULT_TIMEOUT_SECONDS
+
+
+def get_request_retries() -> int:
+    if DEFAULT_MAX_RETRIES < 0:
+        return 0
+    return DEFAULT_MAX_RETRIES
+
+
 def build_input(prompt: str, image_part: dict | None) -> list[dict]:
     content: list[dict] = [{"type": "input_text", "text": prompt}]
     if image_part:
@@ -97,13 +111,20 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             settings = get_openai_settings(role)
-            client = OpenAI(api_key=settings["api_key"], base_url=settings["base_url"])
+            request_timeout_seconds = get_request_timeout_seconds()
+            client = OpenAI(
+                api_key=settings["api_key"],
+                base_url=settings["base_url"],
+                timeout=request_timeout_seconds,
+                max_retries=get_request_retries(),
+            )
 
             request_body = {
                 "model": model_id,
                 "input": build_input(prompt, image_part if isinstance(image_part, dict) else None),
                 "reasoning": {"effort": reasoning_effort or DEFAULT_REASONING_EFFORT},
                 "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
+                "timeout": request_timeout_seconds,
             }
             if isinstance(system_instruction, str) and system_instruction.strip():
                 request_body["instructions"] = system_instruction
@@ -162,6 +183,20 @@ class handler(BaseHTTPRequestHandler):
                 {
                     "text": "API 配额已超出。",
                     "error": "Quota exceeded",
+                    "durationMs": self._duration_ms(started_at),
+                },
+            )
+        except APITimeoutError as error:
+            self._send_json(
+                504,
+                {
+                    "text": (
+                        f"上游 OpenAI 兼容服务在 {get_request_timeout_seconds():g} 秒内未返回。"
+                        "这通常会触发 Vercel 的通用 deployment timeout。"
+                        "请优先把 OpenAI 思考强度从 xhigh 降到 high 或 medium，"
+                        "再检查上游 Base URL 的响应时间。"
+                    ),
+                    "error": "OpenAI request timeout",
                     "durationMs": self._duration_ms(started_at),
                 },
             )
