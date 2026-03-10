@@ -258,7 +258,7 @@ const RoleConfigCard: React.FC<RoleCardProps> = ({
             placeholder={isGemini ? 'AIzaSy...' : 'sk-...'}
             disabled={isLoading}
             type="password"
-            helper={isGemini ? '留空时可回退到构建时注入的 GEMINI_API_KEY' : '留空时仅对已知地址做 env fallback：PackyCode 用 OPENAI_API_KEY，ai-wave 用 OPENAI_COMPAT_API_KEY'}
+            helper={isGemini ? '留空时可回退到构建时注入的 GEMINI_API_KEY' : '留空时可回退到构建时注入的 key：PackyCode 用 OPENAI_API_KEY 或 KEY，ai-wave 用 OPENAI_COMPAT_API_KEY 或 KEY2'}
           />
           <InputField
             label="Base URL"
@@ -267,7 +267,7 @@ const RoleConfigCard: React.FC<RoleCardProps> = ({
             onChange={(value) => onChange({ baseUrl: value })}
             placeholder={isGemini ? DEFAULT_GEMINI_API_BASE_URL : openAiBaseUrlPlaceholder}
             disabled={isLoading}
-            helper={isGemini ? 'Gemini Developer API 或自定义代理地址' : config.openaiTransport === 'responses' ? '需直接指向支持 /responses 的兼容端点' : '需直接指向支持 /chat/completions 的兼容端点；默认 ai-wave /v1'}
+            helper={isGemini ? 'Gemini Developer API 或自定义代理地址' : config.openaiTransport === 'responses' ? '需直接指向支持 /responses 的兼容端点' : '需直接指向支持 /chat/completions 的兼容端点；ai-wave 默认 https://api.ai-wave.org/v1'}
           />
           <InputField
             label="Model ID"

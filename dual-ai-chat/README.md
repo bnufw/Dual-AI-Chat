@@ -19,5 +19,6 @@ View your app in AI Studio: https://ai.studio/apps/drive/1wS-wmXT_J4S-sfYxY1wItw
    - `GEMINI_API_KEY=...`
    - `OPENAI_API_KEY=...` for `https://codex-api.packycode.com/v1`
    - `OPENAI_COMPAT_API_KEY=...` for `https://api.ai-wave.org/v1`
+   - legacy aliases also work: `KEY=...`, `KEY2=...`
 3. Run the app:
    `npm run dev`

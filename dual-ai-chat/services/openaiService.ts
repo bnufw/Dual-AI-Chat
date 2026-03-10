@@ -123,6 +123,23 @@ const summarizeRawBody = (rawText: string, maxLength = 240) => {
   return normalized.slice(0, maxLength);
 };
 
+const getEndpointDetails = (endpoint: string) => {
+  try {
+    const resolved = typeof window !== 'undefined'
+      ? new URL(endpoint, window.location.href)
+      : new URL(endpoint);
+    return {
+      hostname: resolved.hostname,
+      path: `${resolved.pathname}${resolved.search}${resolved.hash}`,
+    };
+  } catch (error) {
+    return {
+      hostname: '',
+      path: endpoint,
+    };
+  }
+};
+
 const normalizeReasoningEffort = (effort: OpenAiReasoningEffort) =>
   effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh'
     ? effort
@@ -401,10 +418,16 @@ export const generateOpenAiResponse = async (
           if (!errorBody && bodySummary) {
             errorMessage = bodySummary;
           }
+          const endpointDetails = getEndpointDetails(endpoint);
           if (response.status === 524) {
             errorMessage = '上游网关超时（HTTP 524）。当前保持所选推理强度未降级；可稍后重试，或手动切换更快模型。';
           } else if (hasHtmlBody) {
             errorMessage = `上游网关返回了 HTML 页面（HTTP ${response.status}），请求被网关或代理层拦截。`;
+          } else if (
+            endpointDetails.hostname === 'api.ai-wave.org'
+            && errorMessage.includes('Invalid URL')
+          ) {
+            errorMessage = `ai-wave 返回了 Invalid URL（${endpointDetails.path}）。这通常意味着当前请求没有带上真正生效的 key，或 Base URL / path 与该 key 对应的接口不匹配。`;
           } else if (errorMessage.trim().toLowerCase() === 'unknown') {
             errorMessage = `上游返回 unknown（HTTP ${response.status}）。请检查 Base URL、模型名或网关日志。`;
           }

@@ -136,7 +136,7 @@ const normalizeRoleConfig = (role: RoleKey, config: Partial<AiRoleConfig>): AiRo
     provider,
     apiKey: typeof config.apiKey === 'string' ? config.apiKey : '',
     baseUrl: typeof config.baseUrl === 'string' && config.baseUrl.trim()
-      ? config.baseUrl
+      ? config.baseUrl.trim()
       : getDefaultBaseUrl(provider, openaiTransport),
     modelId: typeof config.modelId === 'string' ? config.modelId : getDefaultModelId(role, provider),
     openaiTransport,

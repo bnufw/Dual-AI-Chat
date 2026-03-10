@@ -80,8 +80,8 @@ export default defineConfig(({ mode }) => {
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || ''),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || ''),
-      'process.env.OPENAI_API_KEY': JSON.stringify(env.OPENAI_API_KEY || ''),
-      'process.env.OPENAI_COMPAT_API_KEY': JSON.stringify(env.OPENAI_COMPAT_API_KEY || ''),
+      'process.env.OPENAI_API_KEY': JSON.stringify(env.OPENAI_API_KEY || env.KEY || ''),
+      'process.env.OPENAI_COMPAT_API_KEY': JSON.stringify(env.OPENAI_COMPAT_API_KEY || env.KEY2 || ''),
     },
     resolve: {
       alias: {

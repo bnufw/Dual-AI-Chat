@@ -96,7 +96,7 @@ npm run dev
 
 > **提示:** 在 OpenAI 兼容模式下，您可以为 Cognito 和 Muse 分别指定不同的 transport、reasoning effort 和模型 ID。例如：让 Cognito 走 `Responses + high`，Muse 走 `Chat Completions + medium`。
 >
-> 如果不想把 key 写进设置页，也可以在 `.env.local` 中提供构建时注入的 key。当前映射是：`GEMINI_API_KEY -> Gemini`，`OPENAI_API_KEY -> https://codex-api.packycode.com/v1`，`OPENAI_COMPAT_API_KEY -> https://api.ai-wave.org/v1`。未知自定义 URL 不会自动吃 env key，避免串用错误凭证。这和当前 Gemini 的方式一样，会暴露给浏览器前端，不适合真正保密的生产场景。
+> 如果不想把 key 写进设置页，也可以在 `.env.local` 中提供构建时注入的 key。当前映射是：`GEMINI_API_KEY -> Gemini`，`OPENAI_API_KEY` 或 `KEY -> codex-api.packycode.com`，`OPENAI_COMPAT_API_KEY` 或 `KEY2 -> https://api.ai-wave.org/v1`。未知自定义 URL 不会自动吃 env key，避免串用错误凭证。这和当前 Gemini 的方式一样，会暴露给浏览器前端，不适合真正保密的生产场景。
 
 ---
 
