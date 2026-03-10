@@ -68,8 +68,8 @@ export const useAppController = (panelsContainerRef: RefObject<HTMLDivElement>) 
   const settings = useSettings();
 
   const configIssue = useMemo(
-    () => getConfigurationIssue(settings.cognitoConfig, settings.museConfig),
-    [settings.cognitoConfig, settings.museConfig]
+    () => getConfigurationIssue(settings.resolvedCognitoConfig, settings.resolvedMuseConfig),
+    [settings.resolvedCognitoConfig, settings.resolvedMuseConfig]
   );
   const apiKeyStatus = configIssue || runtimeApiKeyStatus;
 
@@ -79,7 +79,7 @@ export const useAppController = (panelsContainerRef: RefObject<HTMLDivElement>) 
       return;
     }
     setRuntimeApiKeyStatus({});
-  }, [settings.cognitoConfig, settings.museConfig]);
+  }, [settings.resolvedCognitoConfig, settings.resolvedMuseConfig]);
 
   const addMessage = useCallback((
     text: string,
@@ -109,8 +109,8 @@ export const useAppController = (panelsContainerRef: RefObject<HTMLDivElement>) 
     setGlobalApiKeyStatus: setRuntimeApiKeyStatus,
     cognitoModelDetails: settings.actualCognitoModelDetails,
     museModelDetails: settings.actualMuseModelDetails,
-    cognitoConfig: settings.cognitoConfig,
-    museConfig: settings.museConfig,
+    cognitoConfig: settings.resolvedCognitoConfig,
+    museConfig: settings.resolvedMuseConfig,
     discussionMode: settings.discussionMode,
     manualFixedTurns: settings.manualFixedTurns,
     cognitoThinkingBudget: settings.cognitoThinkingBudget,
@@ -146,8 +146,8 @@ export const useAppController = (panelsContainerRef: RefObject<HTMLDivElement>) 
     const welcomeText = getWelcomeMessageText(
       settings.discussionMode,
       settings.manualFixedTurns,
-      settings.cognitoConfig,
-      settings.museConfig
+      settings.resolvedCognitoConfig,
+      settings.resolvedMuseConfig
     );
 
     if (shouldClear || messagesRef.current.length === 0) {
@@ -173,8 +173,8 @@ export const useAppController = (panelsContainerRef: RefObject<HTMLDivElement>) 
             text: getWelcomeMessageText(
               settings.discussionMode,
               settings.manualFixedTurns,
-              settings.cognitoConfig,
-              settings.museConfig
+              settings.resolvedCognitoConfig,
+              settings.resolvedMuseConfig
             ),
           }
           : message
@@ -186,8 +186,8 @@ export const useAppController = (panelsContainerRef: RefObject<HTMLDivElement>) 
     apiKeyStatus.isMissing,
     settings.discussionMode,
     settings.manualFixedTurns,
-    settings.cognitoConfig,
-    settings.museConfig,
+    settings.resolvedCognitoConfig,
+    settings.resolvedMuseConfig,
   ]);
 
   useEffect(() => {

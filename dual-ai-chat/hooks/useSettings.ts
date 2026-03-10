@@ -39,6 +39,18 @@ const DEFAULT_FONT_SIZE_SCALE = 0.875;
 
 type RoleKey = 'cognito' | 'muse';
 
+const getInjectedEnvValue = (...values: Array<string | undefined>) =>
+  values.find((value) => typeof value === 'string' && value.trim())?.trim() || '';
+
+const DEPLOYMENT_GEMINI_API_KEY = getInjectedEnvValue(
+  process.env.GEMINI_API_KEY,
+  process.env.API_KEY
+);
+const DEPLOYMENT_GEMINI_BASE_URL = getInjectedEnvValue(
+  process.env.GEMINI_BASE_URL,
+  process.env.GEMINI_API_BASE_URL
+);
+
 const DEFAULT_ROLE_CONFIGS: Record<RoleKey, AiRoleConfig> = {
   cognito: {
     provider: 'gemini',
@@ -76,6 +88,24 @@ const getDefaultModelId = (role: RoleKey, provider: AiProvider) => {
     return role === 'cognito' ? DEFAULT_COGNITO_MODEL_API_NAME : DEFAULT_MUSE_MODEL_API_NAME;
   }
   return role === 'cognito' ? DEFAULT_OPENAI_COGNITO_MODEL_ID : DEFAULT_OPENAI_MUSE_MODEL_ID;
+};
+
+const resolveRoleConfig = (role: RoleKey, config: AiRoleConfig): AiRoleConfig => {
+  if (config.provider === 'openai-compatible') {
+    return getServerManagedOpenAiConfig(role, config.modelId);
+  }
+
+  const trimmedBaseUrl = config.baseUrl.trim();
+  const shouldUseDeploymentBaseUrl =
+    !trimmedBaseUrl || trimmedBaseUrl === DEFAULT_GEMINI_API_BASE_URL;
+
+  return {
+    ...config,
+    apiKey: config.apiKey.trim() || DEPLOYMENT_GEMINI_API_KEY,
+    baseUrl: shouldUseDeploymentBaseUrl
+      ? DEPLOYMENT_GEMINI_BASE_URL || DEFAULT_GEMINI_API_BASE_URL
+      : trimmedBaseUrl,
+  };
 };
 
 const normalizeRoleConfig = (role: RoleKey, config: Partial<AiRoleConfig>): AiRoleConfig => {
@@ -281,18 +311,30 @@ export const useSettings = () => {
   }, []);
 
   const actualCognitoModelDetails = useMemo(
-    () => buildRoleModelDetails('cognito', cognitoConfig),
+    () => buildRoleModelDetails('cognito', resolveRoleConfig('cognito', cognitoConfig)),
     [cognitoConfig]
   );
 
   const actualMuseModelDetails = useMemo(
-    () => buildRoleModelDetails('muse', museConfig),
+    () => buildRoleModelDetails('muse', resolveRoleConfig('muse', museConfig)),
+    [museConfig]
+  );
+
+  const resolvedCognitoConfig = useMemo(
+    () => resolveRoleConfig('cognito', cognitoConfig),
+    [cognitoConfig]
+  );
+
+  const resolvedMuseConfig = useMemo(
+    () => resolveRoleConfig('muse', museConfig),
     [museConfig]
   );
 
   return {
     cognitoConfig,
     museConfig,
+    resolvedCognitoConfig,
+    resolvedMuseConfig,
     updateCognitoConfig: (patch: Partial<AiRoleConfig>) => updateRoleConfig('cognito', patch),
     updateMuseConfig: (patch: Partial<AiRoleConfig>) => updateRoleConfig('muse', patch),
 

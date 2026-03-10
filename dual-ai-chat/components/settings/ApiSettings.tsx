@@ -166,6 +166,7 @@ const RoleConfigCard: React.FC<RoleCardProps> = ({
               value={config.apiKey}
               onChange={(value) => onChange({ apiKey: value })}
               placeholder="AIzaSy..."
+              helper="留空时自动回退到部署时注入的 GEMINI_API_KEY"
               disabled={isLoading}
               type="password"
             />
@@ -176,7 +177,7 @@ const RoleConfigCard: React.FC<RoleCardProps> = ({
               onChange={(value) => onChange({ baseUrl: value })}
               placeholder={DEFAULT_GEMINI_API_BASE_URL}
               disabled={isLoading}
-              helper="Gemini Developer API 或自定义代理地址"
+              helper="Gemini Developer API、自定义代理，或留空回退到部署时注入的 Gemini URL"
             />
             <InputField
               label="Model ID"
