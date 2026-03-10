@@ -1,5 +1,5 @@
 
-import type { AiModel } from './types';
+import type { AiModel, OpenAiReasoningEffort } from './types';
 
 export const GEMINI_3_PRO_MODEL_ID = 'gemini-3-pro-preview';
 export const GEMINI_2_5_PRO_MODEL_ID = 'gemini-2.5-pro';
@@ -42,8 +42,12 @@ export const MODELS: AiModel[] = [
 export const DEFAULT_COGNITO_MODEL_API_NAME = GEMINI_3_PRO_MODEL_ID;
 export const DEFAULT_MUSE_MODEL_API_NAME = GEMINI_3_PRO_MODEL_ID;
 export const DEFAULT_GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com';
-export const DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT = 'xhigh';
+export const DEFAULT_OPENAI_COGNITO_MODEL_ID = 'gpt-5.4';
+export const DEFAULT_OPENAI_MUSE_MODEL_ID = 'gpt-5.4';
+export const DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT: OpenAiReasoningEffort = 'xhigh';
 export const DEFAULT_OPENAI_RESPONSES_MAX_OUTPUT_TOKENS = 6000;
+export const OPENAI_SERVICE_MANAGED_LABEL = '服务端托管';
+export const OPENAI_REASONING_EFFORT_OPTIONS: OpenAiReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 
 export const THINKING_BUDGET_RANGES: { [key: string]: { min: number; max: number } } = {
   [GEMINI_2_5_FLASH_MODEL_ID]: { min: 1024, max: 24576 },
@@ -152,10 +156,8 @@ export const OPENAI_API_BASE_URL_STORAGE_KEY = 'dualAiChatOpenAiApiBaseUrl';
 export const OPENAI_API_KEY_STORAGE_KEY = 'dualAiChatOpenAiApiKey';
 export const OPENAI_COGNITO_MODEL_ID_STORAGE_KEY = 'dualAiChatOpenAiCognitoModelId';
 export const OPENAI_MUSE_MODEL_ID_STORAGE_KEY = 'dualAiChatOpenAiMuseModelId';
+export const OPENAI_REASONING_EFFORT_STORAGE_KEY = 'dualAiChatOpenAiReasoningEffort';
 
-export const DEFAULT_OPENAI_API_BASE_URL = 'https://codex-api.packycode.com/v1';
-export const DEFAULT_OPENAI_COGNITO_MODEL_ID = 'gpt-5.4'; 
-export const DEFAULT_OPENAI_MUSE_MODEL_ID = 'gpt-5.4';
 export const COGNITO_ROLE_CONFIG_STORAGE_KEY = 'dualAiChatCognitoRoleConfig';
 export const MUSE_ROLE_CONFIG_STORAGE_KEY = 'dualAiChatMuseRoleConfig';
 

@@ -17,6 +17,7 @@ interface UseStepExecutorProps extends Pick<
   | 'cognitoThinkingLevel'
   | 'museThinkingBudget'
   | 'museThinkingLevel'
+  | 'openAiReasoningEffort'
 > {
   state: ReturnType<typeof useChatState>;
 }
@@ -39,7 +40,21 @@ export const useStepExecutor = ({
   cognitoThinkingLevel,
   museThinkingBudget,
   museThinkingLevel,
+  openAiReasoningEffort,
 }: UseStepExecutorProps) => {
+  const getOpenAiRole = (sender: MessageSender): 'cognito' | 'muse' =>
+    sender === MessageSender.Cognito ? 'cognito' : 'muse';
+
+  const getMissingConfigMessage = (sender: MessageSender, provider: UseStepExecutorProps['cognitoConfig']['provider']) =>
+    provider === 'openai-compatible'
+      ? `${sender} 的 OpenAI 兼容服务端配置未完成。`
+      : `${sender} 的 ${getProviderLabel(provider)} API Key 未配置。`;
+
+  const getInvalidConfigMessage = (sender: MessageSender, provider: UseStepExecutorProps['cognitoConfig']['provider']) =>
+    provider === 'openai-compatible'
+      ? `${sender} 的 OpenAI 兼容服务端密钥无效或权限不足。`
+      : `${sender} 的 ${getProviderLabel(provider)} API Key 无效或权限不足。`;
+
   const getThinkingConfigForGeminiModel = useCallback((
     modelDetails: AiModel,
     budget: number,
@@ -102,10 +117,10 @@ export const useStepExecutor = ({
 
         const result = roleConfig.provider === 'openai-compatible'
           ? await generateOpenAiResponse(
+            getOpenAiRole(senderForStep),
+            roleConfig.modelId,
+            openAiReasoningEffort,
             prompt,
-            modelDetailsForStep.apiName,
-            roleConfig.apiKey,
-            roleConfig.baseUrl,
             modelDetailsForStep.supportsSystemInstruction ? systemInstructionToUse : undefined,
             imagePayload,
             state.abortControllerRef.current?.signal
@@ -131,7 +146,7 @@ export const useStepExecutor = ({
           if (result.error === 'API key not configured' || result.error.toLowerCase().includes('api key not provided')) {
             setGlobalApiKeyStatus({
               isMissing: true,
-              message: `${senderForStep} 的 ${getProviderLabel(roleConfig.provider)} API Key 未配置。`,
+              message: getMissingConfigMessage(senderForStep, roleConfig.provider),
             });
             throw new Error(result.text);
           }
@@ -139,7 +154,7 @@ export const useStepExecutor = ({
           if (result.error === 'API key invalid or permission denied') {
             setGlobalApiKeyStatus({
               isInvalid: true,
-              message: `${senderForStep} 的 ${getProviderLabel(roleConfig.provider)} API Key 无效或权限不足。`,
+              message: getInvalidConfigMessage(senderForStep, roleConfig.provider),
             });
             throw new Error(result.text);
           }
@@ -179,7 +194,7 @@ export const useStepExecutor = ({
           state.setFailedStepInfo({
             stepIdentifier,
             prompt,
-            modelName: modelDetailsForStep.apiName,
+            modelName: roleConfig.provider === 'openai-compatible' ? roleConfig.modelId : modelDetailsForStep.apiName,
             systemInstruction: modelDetailsForStep.supportsSystemInstruction ? systemInstructionToUse : undefined,
             imageApiPart: imageApiPartForStep,
             sender: senderForStep,
@@ -219,6 +234,7 @@ export const useStepExecutor = ({
     cognitoThinkingLevel,
     museThinkingBudget,
     museThinkingLevel,
+    openAiReasoningEffort,
     getThinkingConfigForGeminiModel,
   ]);
 

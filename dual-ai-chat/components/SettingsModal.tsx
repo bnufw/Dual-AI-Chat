@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { AiRoleConfig, DiscussionMode } from '../types';
+import { AiRoleConfig, DiscussionMode, OpenAiReasoningEffort } from '../types';
 import { X, Settings as SettingsIcon, Cpu, Monitor, Info } from 'lucide-react';
 import ApiSettings from './settings/ApiSettings';
 import DiscussionSettings from './settings/DiscussionSettings';
@@ -28,6 +28,8 @@ interface SettingsModalProps {
   setMuseThinkingBudget: (val: number) => void;
   museThinkingLevel: 'LOW' | 'HIGH';
   setMuseThinkingLevel: (val: 'LOW' | 'HIGH') => void;
+  openAiReasoningEffort: OpenAiReasoningEffort;
+  setOpenAiReasoningEffort: (val: OpenAiReasoningEffort) => void;
   cognitoSystemPrompt: string;
   onCognitoPromptChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onResetCognitoPrompt: () => void;
@@ -63,6 +65,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   setMuseThinkingBudget,
   museThinkingLevel,
   setMuseThinkingLevel,
+  openAiReasoningEffort,
+  setOpenAiReasoningEffort,
   cognitoSystemPrompt,
   onCognitoPromptChange,
   onResetCognitoPrompt,
@@ -128,6 +132,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               setMuseThinkingBudget={setMuseThinkingBudget}
               museThinkingLevel={museThinkingLevel}
               setMuseThinkingLevel={setMuseThinkingLevel}
+              openAiReasoningEffort={openAiReasoningEffort}
+              setOpenAiReasoningEffort={setOpenAiReasoningEffort}
             />
             <div className="w-full h-px bg-slate-100" />
             <PersonaSettings

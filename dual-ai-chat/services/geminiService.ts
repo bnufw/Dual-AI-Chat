@@ -1,5 +1,14 @@
-import { GoogleGenAI, GenerateContentResponse, Part } from '@google/genai';
+import {
+  GoogleGenAI,
+  GenerateContentResponse,
+  Part,
+  ThinkingLevel,
+  type GenerateContentConfig,
+} from '@google/genai';
 import { AiResponsePayload } from '../types';
+
+const toGeminiThinkingLevel = (level: 'LOW' | 'HIGH'): ThinkingLevel =>
+  level === 'LOW' ? ThinkingLevel.LOW : ThinkingLevel.HIGH;
 
 const createGoogleAIClient = (apiKey: string, baseUrl?: string, signal?: AbortSignal): GoogleGenAI => {
   const clientOptions: any = { apiKey };
@@ -60,13 +69,18 @@ export const generateResponse = async (
     }
 
     const genAI = createGoogleAIClient(resolvedApiKey, baseUrl, signal);
-    const configForApi: { systemInstruction?: string; thinkingConfig?: typeof thinkingConfig } = {};
+    const configForApi: GenerateContentConfig = {};
 
     if (systemInstruction) {
       configForApi.systemInstruction = systemInstruction;
     }
     if (thinkingConfig) {
-      configForApi.thinkingConfig = thinkingConfig;
+      configForApi.thinkingConfig = {
+        thinkingBudget: thinkingConfig.thinkingBudget,
+        thinkingLevel: thinkingConfig.thinkingLevel
+          ? toGeminiThinkingLevel(thinkingConfig.thinkingLevel)
+          : undefined,
+      };
     }
 
     const textPart: Part = { text: prompt };

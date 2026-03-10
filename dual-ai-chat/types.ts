@@ -88,6 +88,7 @@ export interface AiModel {
 }
 
 export type AiProvider = 'gemini' | 'openai-compatible';
+export type OpenAiReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface AiRoleConfig {
   provider: AiProvider;
@@ -126,6 +127,7 @@ export interface ChatLogicCommonDependencies {
   cognitoThinkingLevel: 'LOW' | 'HIGH';
   museThinkingBudget: number;
   museThinkingLevel: 'LOW' | 'HIGH';
+  openAiReasoningEffort: OpenAiReasoningEffort;
 
   cognitoSystemPrompt: string;
   museSystemPrompt: string;

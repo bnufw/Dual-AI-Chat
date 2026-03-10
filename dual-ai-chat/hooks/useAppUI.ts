@@ -1,10 +1,18 @@
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+} from 'react';
 
 const MIN_PANEL_PERCENT = 20;
 const MAX_PANEL_PERCENT = 80;
 
-export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: React.RefObject<HTMLDivElement>) => {
+export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: RefObject<HTMLDivElement>) => {
   const [isNotepadFullscreen, setIsNotepadFullscreen] = useState<boolean>(false);
   const [chatPanelWidthPercent, setChatPanelWidthPercent] = useState<number>(initialChatPanelPercent);
   const [currentTotalProcessingTimeMs, setCurrentTotalProcessingTimeMs] = useState<number>(0);
@@ -82,7 +90,7 @@ export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: Re
     document.removeEventListener('mouseup', handleMouseUpOnDocument);
   }, [handleMouseMoveOnDocument]);
 
-  const handleMouseDownOnResizer = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseDownOnResizer = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     isResizingRef.current = true;
     initialMouseXRef.current = e.clientX;
@@ -91,7 +99,7 @@ export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: Re
     document.addEventListener('mouseup', handleMouseUpOnDocument);
   }, [chatPanelWidthPercent, handleMouseMoveOnDocument, handleMouseUpOnDocument]);
 
-  const handleResizerKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleResizerKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
       const stepAmountPercent = 2; 

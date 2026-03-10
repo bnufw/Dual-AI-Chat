@@ -1,379 +1,114 @@
-import {
-  DEFAULT_OPENAI_RESPONSES_MAX_OUTPUT_TOKENS,
-  DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT,
-} from '../constants';
-import { AiResponsePayload } from '../types';
-const OPENAI_RESPONSES_PROXY_PATH = '/__openai_responses_proxy';
-type OpenAiReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+import { AiResponsePayload, OpenAiReasoningEffort } from '../types';
 
-const buildOpenAiResponsesInput = (
-  prompt: string,
-  imagePart?: { mimeType: string; data: string }
-) => {
-  const content: Array<Record<string, unknown>> = [
-    { type: 'input_text', text: prompt },
-  ];
+const OPENAI_RESPONSES_API_PATH = '/api/openai-responses';
 
-  if (imagePart) {
-    content.push({
-      type: 'input_image',
-      image_url: {
-        url: `data:${imagePart.mimeType};base64,${imagePart.data}`,
-      },
-    });
-  }
-
-  return [
-    {
-      role: 'user',
-      content,
-    },
-  ];
-};
-
-const extractResponseText = (data: any) => {
-  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
-    return data.output_text;
-  }
-
-  if (!Array.isArray(data?.output)) return '';
-
-  return data.output
-    .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
-    .filter((content: any) => content?.type === 'output_text' && typeof content.text === 'string')
-    .map((content: any) => content.text)
-    .join('');
-};
-
-const getStreamingEventType = (payload: any, fallbackEventType?: string) =>
-  payload?.type || payload?.event || fallbackEventType || '';
-
-const getStreamingTextDelta = (payload: any) => {
-  if (typeof payload?.delta === 'string') return payload.delta;
-  if (typeof payload?.message?.content?.delta === 'string') return payload.message.content.delta;
-  return '';
-};
-
-const getStreamingDoneText = (payload: any) => {
-  if (typeof payload?.text === 'string') return payload.text;
-  if (typeof payload?.message?.content?.text === 'string') return payload.message.content.text;
-  return '';
-};
+type OpenAiRole = 'cognito' | 'muse';
 
 const parseJsonSafely = (rawText: string): any | null => {
   if (!rawText.trim()) return null;
   try {
     return JSON.parse(rawText);
-  } catch (error) {
+  } catch {
     return null;
   }
 };
 
-const summarizeRawBody = (rawText: string, maxLength = 240) => {
-  const normalized = rawText.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
-  return normalized.slice(0, maxLength);
-};
+const buildFetchFailureMessage = () => [
+  '与AI通信时出错: Failed to fetch',
+  `请求地址: ${OPENAI_RESPONSES_API_PATH}`,
+  '当前浏览器只会请求同源 Python 接口，不再直连上游模型。',
+  '如果你在本地运行，请改用 `vercel dev`，或确认部署环境已包含该 Python Function。',
+].join('\n');
 
-const buildReasoningEffortPlan = (initialEffort: string): OpenAiReasoningEffort[] => {
-  const normalized = initialEffort.trim().toLowerCase();
-  if (
-    normalized === 'low'
-    || normalized === 'medium'
-    || normalized === 'high'
-    || normalized === 'xhigh'
-  ) {
-    return [normalized];
-  }
-  return ['high'];
-};
-
-const buildFetchFailureMessage = (endpoint: string, attemptedProxy: boolean) => {
-  const reasons = [
-    '浏览器没有拿到任何 HTTP 响应，这通常不是模型正文报错。',
-    '优先检查该接口是否允许当前页面来源的 CORS/OPTIONS 预检。',
-    '确认 Base URL 可被浏览器直接访问，且部署站点与接口之间没有被防火墙、代理或插件拦截。',
-  ];
-
-  if (attemptedProxy) {
-    reasons.push('已自动尝试本地代理路径，但仍未拿到响应。请确认你是通过 `npm run dev` 启动，并且前端地址来自同一个 Vite 实例。');
-  }
-
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && endpoint.startsWith('http://')) {
-    reasons.push('当前页面是 HTTPS，但接口是 HTTP，浏览器会直接拦截混合内容请求。');
-  }
-
-  return [`与AI通信时出错: Failed to fetch`, `请求地址: ${endpoint}`, ...reasons].join('\n');
-};
-
-const isCrossOriginEndpoint = (endpoint: string) => {
-  if (typeof window === 'undefined') return false;
-  try {
-    return new URL(endpoint, window.location.href).origin !== window.location.origin;
-  } catch (error) {
-    return false;
-  }
-};
-
-const postOpenAiResponses = async (
-  endpoint: string,
-  requestBody: Record<string, unknown>,
-  apiKey: string,
-  signal?: AbortSignal,
-  proxyTarget?: string
-) => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-    Accept: 'application/json, text/event-stream',
-  };
-
-  if (proxyTarget) {
-    headers['x-openai-target-endpoint'] = proxyTarget;
-  }
-
-  return fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(requestBody),
-    signal,
-  });
-};
-
-const readOpenAiStreamingResponse = async (response: Response) => {
-  if (!response.body) return '';
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let text = '';
-  let finalText = '';
-
-  const processEventBlock = (block: string) => {
-    const lines = block
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (lines.length === 0) return;
-
-    let explicitEventType = '';
-    const dataLines: string[] = [];
-
-    for (const line of lines) {
-      if (line.startsWith('event:')) {
-        explicitEventType = line.slice(6).trim();
-      } else if (line.startsWith('data:')) {
-        dataLines.push(line.slice(5).trim());
-      }
-    }
-
-    const rawData = dataLines.join('\n');
-    if (!rawData || rawData === '[DONE]') return;
-
-    const payload = parseJsonSafely(rawData);
-    if (!payload) return;
-
-    const eventType = getStreamingEventType(payload, explicitEventType);
-    if (eventType === 'response.output_text.delta') {
-      text += getStreamingTextDelta(payload);
-      return;
-    }
-    if (eventType === 'response.output_text.done') {
-      finalText = getStreamingDoneText(payload) || finalText;
-      return;
-    }
-    if (eventType === 'response.done') {
-      finalText = extractResponseText(payload?.response) || finalText;
-    }
-  };
-
-  const getNextEventBlock = () => {
-    const normalizedBuffer = buffer.replace(/\r\n/g, '\n');
-    const separatorIndex = normalizedBuffer.indexOf('\n\n');
-    if (separatorIndex === -1) return null;
-
-    const consumedLength = normalizedBuffer.slice(0, separatorIndex + 2).length;
-    const eventBlock = normalizedBuffer.slice(0, separatorIndex);
-    buffer = normalizedBuffer.slice(consumedLength);
-    return eventBlock;
-  };
-
-  while (true) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-
-    let eventBlock = getNextEventBlock();
-    while (eventBlock !== null) {
-      processEventBlock(eventBlock);
-      eventBlock = getNextEventBlock();
-    }
-
-    if (done) {
-      if (buffer.trim()) {
-        processEventBlock(buffer);
-      }
-      break;
-    }
-  }
-
-  return text || finalText;
-};
+const buildLocalDevMissingApiMessage = () => [
+  '与AI通信时出错: 同源 Python 接口不可用。',
+  `请求地址: ${OPENAI_RESPONSES_API_PATH}`,
+  '你现在很可能是通过纯 Vite 开发服务器打开页面，本地并没有启动 Vercel Python Function。',
+  '如果要联调 OpenAI 兼容链路，请改用 `vercel dev`。',
+].join('\n');
 
 export const generateOpenAiResponse = async (
-  prompt: string,
+  role: OpenAiRole,
   modelId: string,
-  apiKey: string,
-  baseUrl: string,
+  reasoningEffort: OpenAiReasoningEffort,
+  prompt: string,
   systemInstruction?: string,
   imagePart?: { mimeType: string; data: string },
   signal?: AbortSignal
 ): Promise<AiResponsePayload> => {
   const startTime = performance.now();
-  const resolvedApiKey = apiKey.trim();
-
-  if (!resolvedApiKey) {
-    return {
-      text: 'API 密钥未在设置中提供。',
-      durationMs: performance.now() - startTime,
-      error: 'API key not configured',
-    };
-  }
-
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
-  const directEndpoint = normalizedBaseUrl.endsWith('/responses')
-    ? normalizedBaseUrl
-    : `${normalizedBaseUrl}/responses`;
-  const endpoint = directEndpoint;
-  const shouldTryProxyFirst = isCrossOriginEndpoint(endpoint);
-  const requestRoutes = shouldTryProxyFirst
-    ? [
-        { endpoint: OPENAI_RESPONSES_PROXY_PATH, proxyTarget: endpoint },
-        { endpoint },
-      ]
-    : [{ endpoint }];
-  let lastFetchError: Error | null = null;
-  let usedProxyRoute = false;
-  const effortPlan = buildReasoningEffortPlan(DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT);
 
   try {
-    if (signal?.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
+    const response = await fetch(OPENAI_RESPONSES_API_PATH, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        role,
+        modelId,
+        reasoningEffort,
+        prompt,
+        systemInstruction,
+        imagePart,
+      }),
+      signal,
+    });
+
+    const rawBodyText = await response.text();
+    const payload = parseJsonSafely(rawBodyText);
+    const durationMs = typeof payload?.durationMs === 'number'
+      ? payload.durationMs
+      : performance.now() - startTime;
+    const hasHtmlBody = /<\s*html|<!doctype html/i.test(rawBodyText);
+
+    if (!response.ok) {
+      if (hasHtmlBody) {
+        return {
+          text: buildLocalDevMissingApiMessage(),
+          durationMs,
+          error: 'Python API unavailable',
+        };
+      }
+      const text = typeof payload?.text === 'string' && payload.text.trim()
+        ? payload.text
+        : rawBodyText.trim() || `请求失败，状态码: ${response.status}`;
+      const error = typeof payload?.error === 'string' && payload.error.trim()
+        ? payload.error
+        : `HTTP ${response.status}`;
+      return { text, durationMs, error };
     }
-    for (let effortIndex = 0; effortIndex < effortPlan.length; effortIndex += 1) {
-      const effort = effortPlan[effortIndex];
-      const requestBody: Record<string, unknown> = {
-        model: modelId,
-        input: buildOpenAiResponsesInput(prompt, imagePart),
-        reasoning: { effort },
-        max_output_tokens: DEFAULT_OPENAI_RESPONSES_MAX_OUTPUT_TOKENS,
-        stream: true,
+
+    if (hasHtmlBody) {
+      return {
+        text: buildLocalDevMissingApiMessage(),
+        durationMs,
+        error: 'Python API unavailable',
       };
-      if (systemInstruction) {
-        requestBody.instructions = systemInstruction;
-      }
-
-      for (let routeIndex = 0; routeIndex < requestRoutes.length; routeIndex += 1) {
-        const route = requestRoutes[routeIndex];
-        if (route.proxyTarget) {
-          usedProxyRoute = true;
-        }
-        try {
-          const response = await postOpenAiResponses(
-            route.endpoint,
-            requestBody,
-            resolvedApiKey,
-            signal,
-            route.proxyTarget
-          );
-
-          const canFallbackToDirect =
-            !!route.proxyTarget
-            && routeIndex < requestRoutes.length - 1
-            && (response.status === 404 || response.status === 405 || response.status === 502);
-          if (canFallbackToDirect) {
-            continue;
-          }
-
-          const durationMs = performance.now() - startTime;
-          if (!response.ok) {
-            const rawBodyText = await response.text();
-            const errorBody = parseJsonSafely(rawBodyText);
-            const bodySummary = summarizeRawBody(rawBodyText);
-            const hasHtmlBody = /<\s*html|<!doctype html/i.test(rawBodyText);
-
-            let errorMessage =
-              errorBody?.error?.message
-              || errorBody?.message
-              || response.statusText
-              || `请求失败，状态码: ${response.status}`;
-
-            if (!errorBody && bodySummary) {
-              errorMessage = bodySummary;
-            }
-            if (response.status === 524) {
-              errorMessage = '上游网关超时（HTTP 524）。当前保持原推理强度未降级；可稍后重试，或手动切换更快模型。';
-            } else if (hasHtmlBody) {
-              errorMessage = `上游网关返回了 HTML 页面（HTTP ${response.status}），请求被网关或代理层拦截。`;
-            } else if (errorMessage.trim().toLowerCase() === 'unknown') {
-              errorMessage = `上游返回 unknown（HTTP ${response.status}）。请检查 Base URL、模型名或网关日志。`;
-            }
-
-            let errorType = 'OpenAI API error';
-            if (response.status === 401 || response.status === 403) {
-              errorType = 'API key invalid or permission denied';
-            } else if (response.status === 429) {
-              errorType = 'Quota exceeded';
-            }
-
-            console.error('OpenAI Responses API Error:', errorMessage, 'Status:', response.status, 'Body:', errorBody);
-            return { text: errorMessage, durationMs, error: errorType };
-          }
-
-          const contentType = response.headers.get('content-type') || '';
-          const text = contentType.includes('text/event-stream')
-            ? await readOpenAiStreamingResponse(response)
-            : extractResponseText(await response.json());
-
-          if (!text) {
-            console.error('OpenAI Responses API: invalid response structure or empty stream');
-            return { text: 'AI响应格式无效。', durationMs, error: 'Invalid response structure' };
-          }
-
-          return { text, durationMs };
-        } catch (error) {
-          if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
-            return { text: '用户取消操作', durationMs: performance.now() - startTime, error: 'AbortError' };
-          }
-          if (error instanceof Error) {
-            lastFetchError = error;
-          } else {
-            lastFetchError = new Error('Unknown request error');
-          }
-          if (routeIndex < requestRoutes.length - 1) {
-            continue;
-          }
-        }
-      }
-      if (lastFetchError) {
-        throw lastFetchError;
-      }
     }
 
-    throw new Error('OpenAI request failed');
+    if (typeof payload?.text !== 'string' || !payload.text.trim()) {
+      return { text: 'AI响应格式无效。', durationMs, error: 'Invalid response structure' };
+    }
+
+    return {
+      text: payload.text,
+      durationMs,
+      error: typeof payload?.error === 'string' ? payload.error : undefined,
+    };
   } catch (error) {
     if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
       return { text: '用户取消操作', durationMs: performance.now() - startTime, error: 'AbortError' };
     }
 
-    console.error('调用OpenAI Responses API时出错:', error);
+    console.error('调用OpenAI Python API时出错:', error);
     const durationMs = performance.now() - startTime;
 
     if (error instanceof Error) {
-      const normalizedErrorMessage = error.message.trim().toLowerCase();
-      const isUnknownNetworkError = error.name === 'TypeError' && normalizedErrorMessage === 'unknown';
-      if (error.message.includes('Failed to fetch') || error.message.includes('Load failed') || isUnknownNetworkError) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('Load failed')) {
         return {
-          text: buildFetchFailureMessage(endpoint, usedProxyRoute),
+          text: buildFetchFailureMessage(),
           durationMs,
           error: 'Network request blocked',
         };

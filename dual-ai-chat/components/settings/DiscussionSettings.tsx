@@ -1,5 +1,5 @@
 import React from 'react';
-import { AiProvider, DiscussionMode } from '../../types';
+import { AiProvider, DiscussionMode, OpenAiReasoningEffort } from '../../types';
 import {
   Repeat,
   Zap,
@@ -9,7 +9,10 @@ import {
   Plus,
 } from 'lucide-react';
 import { ThinkingControl } from './ThinkingControl';
-import { DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT } from '../../constants';
+import {
+  DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT,
+  OPENAI_REASONING_EFFORT_OPTIONS,
+} from '../../constants';
 
 interface DiscussionSettingsProps {
   isLoading: boolean;
@@ -31,21 +34,63 @@ interface DiscussionSettingsProps {
   setMuseThinkingBudget: (val: number) => void;
   museThinkingLevel: 'LOW' | 'HIGH';
   setMuseThinkingLevel: (val: 'LOW' | 'HIGH') => void;
+  openAiReasoningEffort: OpenAiReasoningEffort;
+  setOpenAiReasoningEffort: (val: OpenAiReasoningEffort) => void;
 }
 
-const OpenAiReasoningNote = ({ accent }: { accent: 'teal' | 'fuchsia' }) => (
+const OpenAiReasoningNote = ({
+  accent,
+}: {
+  accent: 'teal' | 'fuchsia';
+}) => (
   <div className={`p-4 rounded-xl border ${accent === 'teal' ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800'}`}>
     <div className="flex items-start gap-3">
       <div className={`p-2 rounded-lg ${accent === 'teal' ? 'bg-teal-100 text-teal-600' : 'bg-fuchsia-100 text-fuchsia-600'} shrink-0`}>
         <Database size={16} />
       </div>
-      <div className="space-y-1">
+      <div className="space-y-1 flex-1">
         <h5 className="text-sm font-bold">Responses 思考模式</h5>
         <p className="text-xs leading-relaxed">
-          OpenAI 兼容协议固定使用 <code>response mode</code>，并按 <code>gpt-5.4</code> 口径发送{' '}
-          <code>{`reasoning.effort = ${DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT}`}</code>。
+          当前角色会使用全局共享的 <code>reasoning.effort</code>。默认值是 <code>{DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT}</code>。
         </p>
       </div>
+    </div>
+  </div>
+);
+
+const OpenAiReasoningControl = ({
+  value,
+  onChange,
+}: {
+  value: OpenAiReasoningEffort;
+  onChange: (value: OpenAiReasoningEffort) => void;
+}) => (
+  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+    <div className="flex items-center gap-2">
+      <Database size={16} className="text-slate-500" />
+      <h5 className="text-sm font-bold text-slate-800">OpenAI 全局思考强度</h5>
+    </div>
+    <p className="text-xs leading-relaxed text-slate-500">
+      只要任一角色选择 OpenAI 兼容，这个共享值就会随请求一起发给 Python 接口。可选项为 <code>low</code>、<code>medium</code>、<code>high</code>、<code>xhigh</code>。
+    </p>
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {OPENAI_REASONING_EFFORT_OPTIONS.map((option) => {
+        const active = option === value;
+        return (
+          <button
+            key={option}
+            type="button"
+            onClick={() => onChange(option)}
+            className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+              active
+                ? 'border-slate-800 bg-slate-900 text-white'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            {option}
+          </button>
+        );
+      })}
     </div>
   </div>
 );
@@ -70,7 +115,11 @@ const DiscussionSettings: React.FC<DiscussionSettingsProps> = ({
   setMuseThinkingBudget,
   museThinkingLevel,
   setMuseThinkingLevel,
+  openAiReasoningEffort,
+  setOpenAiReasoningEffort,
 }) => {
+  const hasOpenAiRole = cognitoProvider === 'openai-compatible' || museProvider === 'openai-compatible';
+
   return (
     <div className="space-y-8">
       <section className="space-y-4">
@@ -186,7 +235,9 @@ const DiscussionSettings: React.FC<DiscussionSettingsProps> = ({
               disabled={isLoading}
             />
           ) : (
-            <OpenAiReasoningNote accent="teal" />
+            <OpenAiReasoningNote
+              accent="teal"
+            />
           )}
         </div>
 
@@ -202,9 +253,15 @@ const DiscussionSettings: React.FC<DiscussionSettingsProps> = ({
               disabled={isLoading}
             />
           ) : (
-            <OpenAiReasoningNote accent="fuchsia" />
+            <OpenAiReasoningNote
+              accent="fuchsia"
+            />
           )}
         </div>
+
+        {hasOpenAiRole && (
+          <OpenAiReasoningControl value={openAiReasoningEffort} onChange={setOpenAiReasoningEffort} />
+        )}
       </section>
     </div>
   );

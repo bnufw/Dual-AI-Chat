@@ -53,6 +53,8 @@ const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
       setMuseThinkingBudget={settings.setMuseThinkingBudget}
       museThinkingLevel={settings.museThinkingLevel}
       setMuseThinkingLevel={settings.setMuseThinkingLevel}
+      openAiReasoningEffort={settings.openAiReasoningEffort}
+      setOpenAiReasoningEffort={settings.setOpenAiReasoningEffort}
       cognitoSystemPrompt={settings.cognitoSystemPrompt}
       onCognitoPromptChange={(e) => settings.setCognitoSystemPrompt(e.target.value)}
       onResetCognitoPrompt={() => settings.setCognitoSystemPrompt(COGNITO_SYSTEM_PROMPT_HEADER)}

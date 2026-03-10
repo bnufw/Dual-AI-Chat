@@ -11,8 +11,8 @@ import {
 } from 'lucide-react';
 import {
   DEFAULT_GEMINI_API_BASE_URL,
-  DEFAULT_OPENAI_API_BASE_URL,
   DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT,
+  OPENAI_SERVICE_MANAGED_LABEL,
 } from '../../constants';
 
 interface ApiSettingsProps {
@@ -158,35 +158,55 @@ const RoleConfigCard: React.FC<RoleCardProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
-          <InputField
-            label="API Key"
-            icon={KeyRound}
-            value={config.apiKey}
-            onChange={(value) => onChange({ apiKey: value })}
-            placeholder={isGemini ? 'AIzaSy...' : 'sk-...'}
-            disabled={isLoading}
-            type="password"
-          />
-          <InputField
-            label="Base URL"
-            icon={Globe}
-            value={config.baseUrl}
-            onChange={(value) => onChange({ baseUrl: value })}
-            placeholder={isGemini ? DEFAULT_GEMINI_API_BASE_URL : DEFAULT_OPENAI_API_BASE_URL}
-            disabled={isLoading}
-            helper={isGemini ? 'Gemini Developer API 或自定义代理地址' : '需直接指向支持 Responses API 的兼容端点'}
-          />
-          <InputField
-            label="Model ID"
-            icon={isGemini ? Bot : Database}
-            value={config.modelId}
-            onChange={(value) => onChange({ modelId: value })}
-            placeholder={isGemini ? 'gemini-2.5-pro' : 'gpt-5.4'}
-            disabled={isLoading}
-            helper={isGemini ? 'Gemini 继续使用当前 thinking level 参数' : `Responses mode，reasoning.effort 默认 ${DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT}`}
-          />
-        </div>
+        {isGemini ? (
+          <div className="grid grid-cols-1 gap-4">
+            <InputField
+              label="API Key"
+              icon={KeyRound}
+              value={config.apiKey}
+              onChange={(value) => onChange({ apiKey: value })}
+              placeholder="AIzaSy..."
+              disabled={isLoading}
+              type="password"
+            />
+            <InputField
+              label="Base URL"
+              icon={Globe}
+              value={config.baseUrl}
+              onChange={(value) => onChange({ baseUrl: value })}
+              placeholder={DEFAULT_GEMINI_API_BASE_URL}
+              disabled={isLoading}
+              helper="Gemini Developer API 或自定义代理地址"
+            />
+            <InputField
+              label="Model ID"
+              icon={Bot}
+              value={config.modelId}
+              onChange={(value) => onChange({ modelId: value })}
+              placeholder="gemini-2.5-pro"
+              disabled={isLoading}
+              helper="Gemini 继续使用当前 thinking level 参数"
+            />
+          </div>
+        ) : (
+          <div className={`rounded-xl border ${accent.border} bg-white/80 p-4 space-y-2 text-sm text-slate-600`}>
+            <div className="flex items-center gap-2 font-semibold text-slate-800">
+              <Database size={16} className={accent.text} />
+              <span>{OPENAI_SERVICE_MANAGED_LABEL}</span>
+            </div>
+            <InputField
+              label="Model ID"
+              icon={Database}
+              value={config.modelId}
+              onChange={(value) => onChange({ modelId: value })}
+              placeholder="gpt-5.4"
+              disabled={isLoading}
+              helper="该角色实际调用的模型名。Base URL 和 Token 由服务端环境变量统一提供。"
+            />
+            <p>浏览器只会调用同源 Python 接口，不再保存 OpenAI 兼容的 API Key 或 Base URL。</p>
+            <p>Responses mode 默认 reasoning.effort 为 {DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT}，可在下方思考设置里切换为 low / medium / high / xhigh。</p>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -209,7 +229,7 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({
       <div className="space-y-4">
         <RoleConfigCard
           title="Cognito"
-          subtitle="逻辑与综合角色。协议、Key、Base URL、Model ID 在同一块配置。"
+          subtitle="逻辑与综合角色。Gemini 继续前端配置，OpenAI 兼容改为服务端托管。"
           config={cognitoConfig}
           onChange={onCognitoConfigChange}
           isLoading={isLoading}
@@ -224,7 +244,7 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({
         />
         <RoleConfigCard
           title="Muse"
-          subtitle="创意与挑战角色。协议、Key、Base URL、Model ID 在同一块配置。"
+          subtitle="创意与挑战角色。Gemini 继续前端配置，OpenAI 兼容改为服务端托管。"
           config={museConfig}
           onChange={onMuseConfigChange}
           isLoading={isLoading}

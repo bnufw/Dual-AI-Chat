@@ -24,7 +24,7 @@
 | 平台 | 链接 | 说明 |
 | :--- | :--- | :--- |
 | **Google AI Studio** | [**🚀 点击免费使用**](https://ai.studio/apps/drive/1wS-wmXT_J4S-sfYxY1wItwh4UuV4STEk?fullscreenApplet=truea) | **推荐**。直接在 Google 官方环境中运行，通常无需配置 Key (或使用 Google 配额)。 |
-| **Cloudflare Pages** | [**🌐 网页版 Demo**](https://c3d98006.dual-ai-chat-dvb.pages.dev/) | **纯净版**。需在右上角设置中填入您自己的 API Key (Google Gemini 或 OpenAI 兼容 Key)。 |
+| **Cloudflare Pages** | [**🌐 网页版 Demo**](https://c3d98006.dual-ai-chat-dvb.pages.dev/) | **静态演示版**。适合 Gemini；若要启用 OpenAI 兼容，请改用同仓 Vercel 部署，让 Python API 与前端同源。 |
 
 ---
 
@@ -62,18 +62,28 @@
 ### 1. 环境要求
 *   Node.js v18+
 *   npm 或 yarn
+*   若要使用 OpenAI 兼容模式：Vercel 项目或本地 `vercel dev`
 
 ### 2. 安装项目
 ```bash
 git clone https://github.com/your-username/dual-ai-chat.git
-cd dual-ai-chat
+cd <repo-name>/dual-ai-chat
 npm install
 ```
 
-### 3. 配置 API Key (可选)
+### 3. 配置 API Key / 服务端环境变量
 为了方便开发，您可以在根目录创建 `.env.local` 文件（也可以稍后在网页 UI 中设置）：
 ```env
 GEMINI_API_KEY="AIzaSy..."
+```
+
+如果要启用 OpenAI 兼容模式，请把 Vercel 项目根目录设为 `dual-ai-chat/`，并在 Vercel 环境变量中配置：
+
+```env
+OPENAI_COMPAT_BASE_URL="https://your-openai-compatible-host/v1"
+OPENAI_COMPAT_API_KEY="sk-..."
+OPENAI_COMPAT_REASONING_EFFORT="xhigh"
+OPENAI_COMPAT_MAX_OUTPUT_TOKENS="6000"
 ```
 
 ### 4. 启动开发服务器
@@ -81,6 +91,8 @@ GEMINI_API_KEY="AIzaSy..."
 npm run dev
 ```
 访问终端显示的地址（通常为 `http://localhost:3000`）。
+
+> OpenAI 兼容模式现在走同源 Python API。线上推荐直接部署到 Vercel；本地若要联调这条链路，使用 `vercel dev` 比单独 `npm run dev` 更合适，因为后者不会启动 Python Function。
 
 ---
 
@@ -92,9 +104,9 @@ npm run dev
 | :--- | :--- | :--- |
 | **标准 Gemini** | 最简单的 Google 官方服务接入 | 仅需 API Key (读取自环境变量或手动输入) |
 | **自定义 Gemini** | 需要使用反向代理或 Vertex AI | Endpoint (如 `https://my-proxy.com`), API Key |
-| **OpenAI 兼容** | **本地模型 (Ollama)** 或 **DeepSeek** | Base URL (如 `http://localhost:11434/v1`), 模型 ID (如 `deepseek-chat`) |
+| **OpenAI 兼容** | **本地模型 (Ollama)**、**DeepSeek** 或其他兼容服务 | Base URL / API Key 在 Vercel Python API 环境变量中统一配置；Model ID 仍按角色在前端填写 |
 
-> **提示:** 在 OpenAI 兼容模式下，您可以为 Cognito 和 Muse 分别指定不同的模型 ID。例如：让 Cognito 使用擅长推理的 `o1-reasoning`，让 Muse 使用擅长创意的 `gpt-4o`。
+> **提示:** OpenAI 兼容模式下，Cognito 和 Muse 仍可分别使用不同模型，并共享同一个 OpenAI reasoning 档位；模型 ID 在浏览器设置面板填写，URL / Token 由服务端环境变量统一提供。
 
 ---
 

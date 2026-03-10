@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { ChatMessage, MessageSender, MessagePurpose, ApiKeyStatus, AiRoleConfig } from '../types';
 import { useAppUI } from './useAppUI';
 import { useNotepadLogic } from './useNotepadLogic';
@@ -10,6 +10,14 @@ import { CHAT_MESSAGES_STORAGE_KEY } from '../constants';
 const DEFAULT_CHAT_PANEL_PERCENT = 60;
 
 const getRoleConfigIssue = (roleLabel: string, config: AiRoleConfig): ApiKeyStatus | null => {
+  if (config.provider === 'openai-compatible') {
+    if (config.modelId.trim()) return null;
+    return {
+      isMissing: true,
+      message: `${roleLabel} 的 OpenAI 兼容配置不完整：缺少 Model ID。`,
+    };
+  }
+
   const missingFields: string[] = [];
   if (!config.apiKey.trim()) missingFields.push('API Key');
   if (!config.baseUrl.trim()) missingFields.push('Base URL');
@@ -29,7 +37,7 @@ const getConfigurationIssue = (
 ): ApiKeyStatus | null =>
   getRoleConfigIssue('Cognito', cognitoConfig) || getRoleConfigIssue('Muse', museConfig);
 
-export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElement>) => {
+export const useAppController = (panelsContainerRef: RefObject<HTMLDivElement>) => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const saved = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
     if (saved) {
@@ -109,6 +117,7 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
     cognitoThinkingLevel: settings.cognitoThinkingLevel,
     museThinkingBudget: settings.museThinkingBudget,
     museThinkingLevel: settings.museThinkingLevel,
+    openAiReasoningEffort: settings.openAiReasoningEffort,
     cognitoSystemPrompt: settings.cognitoSystemPrompt,
     museSystemPrompt: settings.museSystemPrompt,
     notepadContent: notepad.notepadContent,
