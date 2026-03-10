@@ -13,8 +13,9 @@ interface SettingsModalProps {
   discussionMode: DiscussionMode;
   onDiscussionModeChange: (mode: DiscussionMode) => void;
   manualFixedTurns: number;
-  onManualFixedTurnsChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onManualFixedTurnsChange: (value: number | string) => void;
   minManualFixedTurns: number;
+  maxManualFixedTurns: number;
   cognitoConfig: AiRoleConfig;
   onCognitoConfigChange: (patch: Partial<AiRoleConfig>) => void;
   museConfig: AiRoleConfig;
@@ -49,6 +50,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   manualFixedTurns,
   onManualFixedTurnsChange,
   minManualFixedTurns,
+  maxManualFixedTurns,
   cognitoConfig,
   onCognitoConfigChange,
   museConfig,
@@ -113,6 +115,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               manualFixedTurns={manualFixedTurns}
               onManualFixedTurnsChange={onManualFixedTurnsChange}
               minManualFixedTurns={minManualFixedTurns}
+              maxManualFixedTurns={maxManualFixedTurns}
               cognitoProvider={cognitoConfig.provider}
               cognitoModelId={cognitoConfig.modelId}
               cognitoThinkingBudget={cognitoThinkingBudget}

@@ -94,6 +94,7 @@ export const MUSE_SYSTEM_PROMPT_HEADER = `You are Muse, a creative, skeptical, a
 
 export const DEFAULT_MANUAL_FIXED_TURNS = 2;
 export const MIN_MANUAL_FIXED_TURNS = 1;
+export const MAX_MANUAL_FIXED_TURNS = 10;
 
 export const INITIAL_NOTEPAD_CONTENT = `这是共享记事本。\nCognito 和 Muse 可以在讨论过程中共同编辑和使用它。`;
 

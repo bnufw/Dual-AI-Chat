@@ -3,6 +3,7 @@ import SettingsModal from './SettingsModal';
 import { useSettings } from '../hooks/useSettings';
 import {
   MIN_MANUAL_FIXED_TURNS,
+  MAX_MANUAL_FIXED_TURNS,
   DEFAULT_MANUAL_FIXED_TURNS,
   COGNITO_SYSTEM_PROMPT_HEADER,
   MUSE_SYSTEM_PROMPT_HEADER,
@@ -23,6 +24,12 @@ const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
   isLoading,
   settings,
 }) => {
+  const handleManualFixedTurnsChange = (rawValue: number | string) => {
+    const parsed = typeof rawValue === 'number' ? rawValue : parseInt(rawValue, 10);
+    const value = Number.isNaN(parsed) ? DEFAULT_MANUAL_FIXED_TURNS : parsed;
+    settings.setManualFixedTurns(Math.min(MAX_MANUAL_FIXED_TURNS, Math.max(MIN_MANUAL_FIXED_TURNS, value)));
+  };
+
   return (
     <SettingsModal
       isOpen={isOpen}
@@ -31,13 +38,9 @@ const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
       discussionMode={settings.discussionMode}
       onDiscussionModeChange={settings.setDiscussionMode}
       manualFixedTurns={settings.manualFixedTurns}
-      onManualFixedTurnsChange={(e) => {
-        let value = parseInt(e.target.value, 10);
-        if (isNaN(value)) value = DEFAULT_MANUAL_FIXED_TURNS;
-        value = Math.max(MIN_MANUAL_FIXED_TURNS, value);
-        settings.setManualFixedTurns(value);
-      }}
+      onManualFixedTurnsChange={handleManualFixedTurnsChange}
       minManualFixedTurns={MIN_MANUAL_FIXED_TURNS}
+      maxManualFixedTurns={MAX_MANUAL_FIXED_TURNS}
       cognitoConfig={settings.cognitoConfig}
       onCognitoConfigChange={settings.updateCognitoConfig}
       museConfig={settings.museConfig}

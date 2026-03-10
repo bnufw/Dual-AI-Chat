@@ -5,6 +5,8 @@ import {
   Zap,
   Layers,
   Database,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import { ThinkingControl } from './ThinkingControl';
 import { DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT } from '../../constants';
@@ -14,8 +16,9 @@ interface DiscussionSettingsProps {
   discussionMode: DiscussionMode;
   onDiscussionModeChange: (mode: DiscussionMode) => void;
   manualFixedTurns: number;
-  onManualFixedTurnsChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onManualFixedTurnsChange: (value: number | string) => void;
   minManualFixedTurns: number;
+  maxManualFixedTurns: number;
   cognitoProvider: AiProvider;
   cognitoModelId: string;
   cognitoThinkingBudget: number;
@@ -54,6 +57,7 @@ const DiscussionSettings: React.FC<DiscussionSettingsProps> = ({
   manualFixedTurns,
   onManualFixedTurnsChange,
   minManualFixedTurns,
+  maxManualFixedTurns,
   cognitoProvider,
   cognitoModelId,
   cognitoThinkingBudget,
@@ -117,18 +121,53 @@ const DiscussionSettings: React.FC<DiscussionSettingsProps> = ({
                 {manualFixedTurns}
               </span>
             </div>
-            <input
-              type="range"
-              min={minManualFixedTurns}
-              max="10"
-              value={manualFixedTurns}
-              onChange={onManualFixedTurnsChange}
-              className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-600"
-              disabled={isLoading}
-            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => onManualFixedTurnsChange(manualFixedTurns - 1)}
+                disabled={isLoading || manualFixedTurns <= minManualFixedTurns}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="减少固定轮次"
+              >
+                <Minus size={16} />
+              </button>
+              <input
+                type="range"
+                min={minManualFixedTurns}
+                max={maxManualFixedTurns}
+                step="1"
+                value={manualFixedTurns}
+                onChange={(e) => onManualFixedTurnsChange(e.target.value)}
+                onInput={(e) => onManualFixedTurnsChange((e.target as HTMLInputElement).value)}
+                className="flex-1 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-600"
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                onClick={() => onManualFixedTurnsChange(manualFixedTurns + 1)}
+                disabled={isLoading || manualFixedTurns >= maxManualFixedTurns}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="增加固定轮次"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <input
+                type="number"
+                min={minManualFixedTurns}
+                max={maxManualFixedTurns}
+                step="1"
+                value={manualFixedTurns}
+                onChange={(e) => onManualFixedTurnsChange(e.target.value)}
+                className="w-20 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center font-mono text-sm text-slate-700 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                disabled={isLoading}
+                aria-label="固定轮次数值"
+              />
+            </div>
             <div className="flex justify-between mt-2 text-[10px] text-slate-400 font-medium">
               <span>{minManualFixedTurns} 最小</span>
-              <span>10 最大</span>
+              <span>{maxManualFixedTurns} 最大</span>
             </div>
           </div>
         )}
