@@ -6,7 +6,13 @@ from http.server import BaseHTTPRequestHandler
 from openai import APITimeoutError, APIConnectionError, APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
 DEFAULT_REASONING_EFFORT = os.getenv("OPENAI_COMPAT_REASONING_EFFORT", "xhigh")
-DEFAULT_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_COMPAT_MAX_OUTPUT_TOKENS", "6000"))
+LEGACY_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_COMPAT_MAX_OUTPUT_TOKENS", "2200"))
+DEFAULT_INTERNAL_MAX_OUTPUT_TOKENS = int(
+    os.getenv("OPENAI_COMPAT_INTERNAL_MAX_OUTPUT_TOKENS", str(min(1200, LEGACY_MAX_OUTPUT_TOKENS)))
+)
+DEFAULT_FINAL_MAX_OUTPUT_TOKENS = int(
+    os.getenv("OPENAI_COMPAT_FINAL_MAX_OUTPUT_TOKENS", str(min(2200, LEGACY_MAX_OUTPUT_TOKENS)))
+)
 DEFAULT_TIMEOUT_SECONDS = float(os.getenv("OPENAI_COMPAT_TIMEOUT_SECONDS", "45"))
 DEFAULT_MAX_RETRIES = int(os.getenv("OPENAI_COMPAT_MAX_RETRIES", "0"))
 
@@ -68,6 +74,13 @@ def get_request_retries() -> int:
     return DEFAULT_MAX_RETRIES
 
 
+def get_max_output_tokens(purpose: str) -> int:
+    normalized_purpose = purpose.strip().lower()
+    if normalized_purpose == "final-response":
+        return max(256, DEFAULT_FINAL_MAX_OUTPUT_TOKENS)
+    return max(256, DEFAULT_INTERNAL_MAX_OUTPUT_TOKENS)
+
+
 def build_input(prompt: str, image_part: dict | None) -> list[dict]:
     content: list[dict] = [{"type": "input_text", "text": prompt}]
     if image_part:
@@ -95,6 +108,7 @@ class handler(BaseHTTPRequestHandler):
             body = json.loads(raw_body.decode("utf-8") or "{}")
             role = str(body.get("role", "")).strip()
             model_id = str(body.get("modelId", "")).strip()
+            purpose = str(body.get("purpose", "")).strip()
             reasoning_effort = str(body.get("reasoningEffort", DEFAULT_REASONING_EFFORT)).strip().lower()
             prompt = str(body.get("prompt", "")).strip()
             system_instruction = body.get("systemInstruction")
@@ -112,6 +126,7 @@ class handler(BaseHTTPRequestHandler):
 
             settings = get_openai_settings(role)
             request_timeout_seconds = get_request_timeout_seconds()
+            max_output_tokens = get_max_output_tokens(purpose)
             client = OpenAI(
                 api_key=settings["api_key"],
                 base_url=settings["base_url"],
@@ -123,7 +138,7 @@ class handler(BaseHTTPRequestHandler):
                 "model": model_id,
                 "input": build_input(prompt, image_part if isinstance(image_part, dict) else None),
                 "reasoning": {"effort": reasoning_effort or DEFAULT_REASONING_EFFORT},
-                "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
+                "max_output_tokens": max_output_tokens,
                 "timeout": request_timeout_seconds,
             }
             if isinstance(system_instruction, str) and system_instruction.strip():
@@ -193,8 +208,8 @@ class handler(BaseHTTPRequestHandler):
                     "text": (
                         f"上游 OpenAI 兼容服务在 {get_request_timeout_seconds():g} 秒内未返回。"
                         "这通常会触发 Vercel 的通用 deployment timeout。"
-                        "请优先把 OpenAI 思考强度从 xhigh 降到 high 或 medium，"
-                        "再检查上游 Base URL 的响应时间。"
+                        f"当前该步骤的 max_output_tokens 为 {max_output_tokens}。"
+                        "这更像是上游 Base URL 响应过慢，或该兼容服务不适合这种非流式多轮对话请求。"
                     ),
                     "error": "OpenAI request timeout",
                     "durationMs": self._duration_ms(started_at),

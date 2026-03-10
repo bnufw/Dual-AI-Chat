@@ -118,6 +118,7 @@ export const useStepExecutor = ({
         const result = roleConfig.provider === 'openai-compatible'
           ? await generateOpenAiResponse(
             getOpenAiRole(senderForStep),
+            purposeForStep,
             roleConfig.modelId,
             openAiReasoningEffort,
             prompt,

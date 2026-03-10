@@ -1,4 +1,4 @@
-import { AiResponsePayload, OpenAiReasoningEffort } from '../types';
+import { AiResponsePayload, MessagePurpose, OpenAiReasoningEffort } from '../types';
 
 const OPENAI_RESPONSES_API_PATH = '/api/openai-responses';
 
@@ -52,11 +52,12 @@ const buildDeploymentTimeoutMessage = () => [
   '与AI通信时出错: Vercel Python 接口超时或部署层执行失败。',
   `请求地址: ${OPENAI_RESPONSES_API_PATH}`,
   '这通常意味着同源 Python Function 没能在 Vercel 的时间预算内完成上游 OpenAI 请求。',
-  '优先把 OpenAI 思考强度从 `xhigh` 降到 `high` 或 `medium`，再检查服务端 `OPENAI_COMPAT_BASE_URL` 的响应时间。',
+  '这时更该检查服务端 `OPENAI_COMPAT_BASE_URL` 的响应时间，以及 OpenAI 请求的输出上限，而不是只看 reasoning 档位。',
 ].join('\n');
 
 export const generateOpenAiResponse = async (
   role: OpenAiRole,
+  purpose: MessagePurpose,
   modelId: string,
   reasoningEffort: OpenAiReasoningEffort,
   prompt: string,
@@ -75,6 +76,7 @@ export const generateOpenAiResponse = async (
       },
       body: JSON.stringify({
         role,
+        purpose,
         modelId,
         reasoningEffort,
         prompt,
