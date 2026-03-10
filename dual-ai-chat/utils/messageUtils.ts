@@ -1,10 +1,15 @@
-import { AiProvider, AiRoleConfig, DiscussionMode } from '../types';
+import { AiProvider, AiRoleConfig, DiscussionMode, OpenAiTransport } from '../types';
 
 export const getProviderLabel = (provider: AiProvider) =>
   provider === 'gemini' ? 'Gemini' : 'OpenAI 兼容';
 
+export const getOpenAiTransportLabel = (transport: OpenAiTransport) =>
+  transport === 'responses' ? 'Responses' : 'Chat Completions';
+
 export const getRoleModelSummary = (config: AiRoleConfig) =>
-  `${getProviderLabel(config.provider)} / ${config.modelId.trim() || '未指定'}`;
+  config.provider === 'gemini'
+    ? `${getProviderLabel(config.provider)} / ${config.modelId.trim() || '未指定'}`
+    : `${getProviderLabel(config.provider)} / ${getOpenAiTransportLabel(config.openaiTransport)} / ${config.modelId.trim() || '未指定'}`;
 
 export const getWelcomeMessageText = (
   currentDiscussionMode: DiscussionMode,

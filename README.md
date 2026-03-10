@@ -92,9 +92,11 @@ npm run dev
 | :--- | :--- | :--- |
 | **标准 Gemini** | 最简单的 Google 官方服务接入 | 仅需 API Key (读取自环境变量或手动输入) |
 | **自定义 Gemini** | 需要使用反向代理或 Vertex AI | Endpoint (如 `https://my-proxy.com`), API Key |
-| **OpenAI 兼容** | **本地模型 (Ollama)** 或 **DeepSeek** | Base URL (如 `http://localhost:11434/v1`), 模型 ID (如 `deepseek-chat`) |
+| **OpenAI 兼容** | **本地模型 (Ollama)**、**DeepSeek**、或 `ai-wave` 这类兼容网关 | Transport (`Responses` / `Chat Completions`), Base URL (如 `http://localhost:11434/v1` 或 `https://api.ai-wave.org/v1`), 模型 ID |
 
-> **提示:** 在 OpenAI 兼容模式下，您可以为 Cognito 和 Muse 分别指定不同的模型 ID。例如：让 Cognito 使用擅长推理的 `o1-reasoning`，让 Muse 使用擅长创意的 `gpt-4o`。
+> **提示:** 在 OpenAI 兼容模式下，您可以为 Cognito 和 Muse 分别指定不同的 transport、reasoning effort 和模型 ID。例如：让 Cognito 走 `Responses + high`，Muse 走 `Chat Completions + medium`。
+>
+> 如果不想把 key 写进设置页，也可以在 `.env.local` 中提供构建时注入的 key。当前映射是：`GEMINI_API_KEY -> Gemini`，`OPENAI_API_KEY -> https://codex-api.packycode.com/v1`，`OPENAI_COMPAT_API_KEY -> https://api.ai-wave.org/v1`。未知自定义 URL 不会自动吃 env key，避免串用错误凭证。这和当前 Gemini 的方式一样，会暴露给浏览器前端，不适合真正保密的生产场景。
 
 ---
 

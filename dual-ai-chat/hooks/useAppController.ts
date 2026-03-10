@@ -60,8 +60,8 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
   const settings = useSettings();
 
   const configIssue = useMemo(
-    () => getConfigurationIssue(settings.cognitoConfig, settings.museConfig),
-    [settings.cognitoConfig, settings.museConfig]
+    () => getConfigurationIssue(settings.resolvedCognitoConfig, settings.resolvedMuseConfig),
+    [settings.resolvedCognitoConfig, settings.resolvedMuseConfig]
   );
   const apiKeyStatus = configIssue || runtimeApiKeyStatus;
 
@@ -101,8 +101,8 @@ export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElem
     setGlobalApiKeyStatus: setRuntimeApiKeyStatus,
     cognitoModelDetails: settings.actualCognitoModelDetails,
     museModelDetails: settings.actualMuseModelDetails,
-    cognitoConfig: settings.cognitoConfig,
-    museConfig: settings.museConfig,
+    cognitoConfig: settings.resolvedCognitoConfig,
+    museConfig: settings.resolvedMuseConfig,
     discussionMode: settings.discussionMode,
     manualFixedTurns: settings.manualFixedTurns,
     cognitoThinkingBudget: settings.cognitoThinkingBudget,

@@ -88,12 +88,16 @@ export interface AiModel {
 }
 
 export type AiProvider = 'gemini' | 'openai-compatible';
+export type OpenAiTransport = 'responses' | 'chat-completions';
+export type OpenAiReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface AiRoleConfig {
   provider: AiProvider;
   apiKey: string;
   baseUrl: string;
   modelId: string;
+  openaiTransport: OpenAiTransport;
+  openaiReasoningEffort: OpenAiReasoningEffort;
 }
 
 export interface MutableRefObject<T> {

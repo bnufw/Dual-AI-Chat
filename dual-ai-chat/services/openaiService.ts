@@ -2,9 +2,9 @@ import {
   DEFAULT_OPENAI_RESPONSES_MAX_OUTPUT_TOKENS,
   DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT,
 } from '../constants';
-import { AiResponsePayload } from '../types';
-const OPENAI_RESPONSES_PROXY_PATH = '/__openai_responses_proxy';
-type OpenAiReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+import { AiResponsePayload, OpenAiReasoningEffort, OpenAiTransport } from '../types';
+
+const OPENAI_PROXY_PATH = '/__openai_responses_proxy';
 
 const buildOpenAiResponsesInput = (
   prompt: string,
@@ -31,6 +31,40 @@ const buildOpenAiResponsesInput = (
   ];
 };
 
+const buildOpenAiChatMessages = (
+  prompt: string,
+  systemInstruction?: string,
+  imagePart?: { mimeType: string; data: string }
+) => {
+  const messages: Array<Record<string, unknown>> = [];
+
+  if (systemInstruction?.trim()) {
+    messages.push({
+      role: 'system',
+      content: systemInstruction,
+    });
+  }
+
+  const userContent = imagePart
+    ? [
+        { type: 'text', text: prompt },
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:${imagePart.mimeType};base64,${imagePart.data}`,
+          },
+        },
+      ]
+    : prompt;
+
+  messages.push({
+    role: 'user',
+    content: userContent,
+  });
+
+  return messages;
+};
+
 const extractResponseText = (data: any) => {
   if (typeof data?.output_text === 'string' && data.output_text.trim()) {
     return data.output_text;
@@ -42,6 +76,20 @@ const extractResponseText = (data: any) => {
     .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
     .filter((content: any) => content?.type === 'output_text' && typeof content.text === 'string')
     .map((content: any) => content.text)
+    .join('');
+};
+
+const extractChatCompletionsText = (data: any) => {
+  const messageContent = data?.choices?.[0]?.message?.content;
+
+  if (typeof messageContent === 'string' && messageContent.trim()) {
+    return messageContent;
+  }
+
+  if (!Array.isArray(messageContent)) return '';
+
+  return messageContent
+    .map((part: any) => typeof part?.text === 'string' ? part.text : '')
     .join('');
 };
 
@@ -75,20 +123,12 @@ const summarizeRawBody = (rawText: string, maxLength = 240) => {
   return normalized.slice(0, maxLength);
 };
 
-const buildReasoningEffortPlan = (initialEffort: string): OpenAiReasoningEffort[] => {
-  const normalized = initialEffort.trim().toLowerCase();
-  if (
-    normalized === 'low'
-    || normalized === 'medium'
-    || normalized === 'high'
-    || normalized === 'xhigh'
-  ) {
-    return [normalized];
-  }
-  return ['high'];
-};
+const normalizeReasoningEffort = (effort: OpenAiReasoningEffort) =>
+  effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh'
+    ? effort
+    : DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT;
 
-const buildFetchFailureMessage = (endpoint: string, attemptedProxy: boolean) => {
+const buildFetchFailureMessage = (endpoint: string, attemptedProxy: boolean, transport: OpenAiTransport) => {
   const reasons = [
     '浏览器没有拿到任何 HTTP 响应，这通常不是模型正文报错。',
     '优先检查该接口是否允许当前页面来源的 CORS/OPTIONS 预检。',
@@ -103,7 +143,12 @@ const buildFetchFailureMessage = (endpoint: string, attemptedProxy: boolean) => 
     reasons.push('当前页面是 HTTPS，但接口是 HTTP，浏览器会直接拦截混合内容请求。');
   }
 
-  return [`与AI通信时出错: Failed to fetch`, `请求地址: ${endpoint}`, ...reasons].join('\n');
+  return [
+    `与AI通信时出错: Failed to fetch`,
+    `请求地址: ${endpoint}`,
+    `请求模式: ${transport === 'responses' ? 'Responses' : 'Chat Completions'}`,
+    ...reasons,
+  ].join('\n');
 };
 
 const isCrossOriginEndpoint = (endpoint: string) => {
@@ -115,7 +160,7 @@ const isCrossOriginEndpoint = (endpoint: string) => {
   }
 };
 
-const postOpenAiResponses = async (
+const postOpenAiRequest = async (
   endpoint: string,
   requestBody: Record<string, unknown>,
   apiKey: string,
@@ -219,11 +264,66 @@ const readOpenAiStreamingResponse = async (response: Response) => {
   return text || finalText;
 };
 
+const getOpenAiEndpoint = (baseUrl: string, transport: OpenAiTransport) => {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+  const endpointSuffix = transport === 'responses' ? '/responses' : '/chat/completions';
+  return normalizedBaseUrl.endsWith(endpointSuffix)
+    ? normalizedBaseUrl
+    : `${normalizedBaseUrl}${endpointSuffix}`;
+};
+
+const getOpenAiRequestBody = (
+  transport: OpenAiTransport,
+  prompt: string,
+  modelId: string,
+  reasoningEffort: OpenAiReasoningEffort,
+  systemInstruction?: string,
+  imagePart?: { mimeType: string; data: string },
+) => {
+  const normalizedReasoningEffort = normalizeReasoningEffort(reasoningEffort);
+
+  if (transport === 'chat-completions') {
+    return {
+      model: modelId,
+      messages: buildOpenAiChatMessages(prompt, systemInstruction, imagePart),
+      reasoning_effort: normalizedReasoningEffort,
+      stream: false,
+    };
+  }
+
+  const requestBody: Record<string, unknown> = {
+    model: modelId,
+    input: buildOpenAiResponsesInput(prompt, imagePart),
+    reasoning: { effort: normalizedReasoningEffort },
+    max_output_tokens: DEFAULT_OPENAI_RESPONSES_MAX_OUTPUT_TOKENS,
+    stream: true,
+  };
+
+  if (systemInstruction) {
+    requestBody.instructions = systemInstruction;
+  }
+
+  return requestBody;
+};
+
+const getOpenAiResponseText = async (transport: OpenAiTransport, response: Response) => {
+  if (transport === 'chat-completions') {
+    return extractChatCompletionsText(await response.json());
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  return contentType.includes('text/event-stream')
+    ? readOpenAiStreamingResponse(response)
+    : extractResponseText(await response.json());
+};
+
 export const generateOpenAiResponse = async (
   prompt: string,
   modelId: string,
   apiKey: string,
   baseUrl: string,
+  transport: OpenAiTransport,
+  reasoningEffort: OpenAiReasoningEffort,
   systemInstruction?: string,
   imagePart?: { mimeType: string; data: string },
   signal?: AbortSignal
@@ -239,124 +339,112 @@ export const generateOpenAiResponse = async (
     };
   }
 
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
-  const directEndpoint = normalizedBaseUrl.endsWith('/responses')
-    ? normalizedBaseUrl
-    : `${normalizedBaseUrl}/responses`;
-  const endpoint = directEndpoint;
+  const endpoint = getOpenAiEndpoint(baseUrl, transport);
   const shouldTryProxyFirst = isCrossOriginEndpoint(endpoint);
   const requestRoutes = shouldTryProxyFirst
     ? [
-        { endpoint: OPENAI_RESPONSES_PROXY_PATH, proxyTarget: endpoint },
+        { endpoint: OPENAI_PROXY_PATH, proxyTarget: endpoint },
         { endpoint },
       ]
     : [{ endpoint }];
   let lastFetchError: Error | null = null;
   let usedProxyRoute = false;
-  const effortPlan = buildReasoningEffortPlan(DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT);
+  const requestBody = getOpenAiRequestBody(
+    transport,
+    prompt,
+    modelId,
+    reasoningEffort,
+    systemInstruction,
+    imagePart
+  );
+  const apiLabel = transport === 'responses' ? 'OpenAI Responses API' : 'OpenAI Chat Completions API';
 
   try {
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    for (let effortIndex = 0; effortIndex < effortPlan.length; effortIndex += 1) {
-      const effort = effortPlan[effortIndex];
-      const requestBody: Record<string, unknown> = {
-        model: modelId,
-        input: buildOpenAiResponsesInput(prompt, imagePart),
-        reasoning: { effort },
-        max_output_tokens: DEFAULT_OPENAI_RESPONSES_MAX_OUTPUT_TOKENS,
-        stream: true,
-      };
-      if (systemInstruction) {
-        requestBody.instructions = systemInstruction;
+    for (let routeIndex = 0; routeIndex < requestRoutes.length; routeIndex += 1) {
+      const route = requestRoutes[routeIndex];
+      if (route.proxyTarget) {
+        usedProxyRoute = true;
       }
+      try {
+        const response = await postOpenAiRequest(
+          route.endpoint,
+          requestBody,
+          resolvedApiKey,
+          signal,
+          route.proxyTarget
+        );
 
-      for (let routeIndex = 0; routeIndex < requestRoutes.length; routeIndex += 1) {
-        const route = requestRoutes[routeIndex];
-        if (route.proxyTarget) {
-          usedProxyRoute = true;
+        const canFallbackToDirect =
+          !!route.proxyTarget
+          && routeIndex < requestRoutes.length - 1
+          && (response.status === 404 || response.status === 405 || response.status === 502);
+        if (canFallbackToDirect) {
+          continue;
         }
-        try {
-          const response = await postOpenAiResponses(
-            route.endpoint,
-            requestBody,
-            resolvedApiKey,
-            signal,
-            route.proxyTarget
-          );
 
-          const canFallbackToDirect =
-            !!route.proxyTarget
-            && routeIndex < requestRoutes.length - 1
-            && (response.status === 404 || response.status === 405 || response.status === 502);
-          if (canFallbackToDirect) {
-            continue;
+        const durationMs = performance.now() - startTime;
+        if (!response.ok) {
+          const rawBodyText = await response.text();
+          const errorBody = parseJsonSafely(rawBodyText);
+          const bodySummary = summarizeRawBody(rawBodyText);
+          const hasHtmlBody = /<\s*html|<!doctype html/i.test(rawBodyText);
+
+          let errorMessage =
+            errorBody?.error?.message
+            || errorBody?.message
+            || response.statusText
+            || `请求失败，状态码: ${response.status}`;
+
+          if (!errorBody && bodySummary) {
+            errorMessage = bodySummary;
+          }
+          if (response.status === 524) {
+            errorMessage = '上游网关超时（HTTP 524）。当前保持所选推理强度未降级；可稍后重试，或手动切换更快模型。';
+          } else if (hasHtmlBody) {
+            errorMessage = `上游网关返回了 HTML 页面（HTTP ${response.status}），请求被网关或代理层拦截。`;
+          } else if (errorMessage.trim().toLowerCase() === 'unknown') {
+            errorMessage = `上游返回 unknown（HTTP ${response.status}）。请检查 Base URL、模型名或网关日志。`;
           }
 
-          const durationMs = performance.now() - startTime;
-          if (!response.ok) {
-            const rawBodyText = await response.text();
-            const errorBody = parseJsonSafely(rawBodyText);
-            const bodySummary = summarizeRawBody(rawBodyText);
-            const hasHtmlBody = /<\s*html|<!doctype html/i.test(rawBodyText);
-
-            let errorMessage =
-              errorBody?.error?.message
-              || errorBody?.message
-              || response.statusText
-              || `请求失败，状态码: ${response.status}`;
-
-            if (!errorBody && bodySummary) {
-              errorMessage = bodySummary;
-            }
-            if (response.status === 524) {
-              errorMessage = '上游网关超时（HTTP 524）。当前保持原推理强度未降级；可稍后重试，或手动切换更快模型。';
-            } else if (hasHtmlBody) {
-              errorMessage = `上游网关返回了 HTML 页面（HTTP ${response.status}），请求被网关或代理层拦截。`;
-            } else if (errorMessage.trim().toLowerCase() === 'unknown') {
-              errorMessage = `上游返回 unknown（HTTP ${response.status}）。请检查 Base URL、模型名或网关日志。`;
-            }
-
-            let errorType = 'OpenAI API error';
-            if (response.status === 401 || response.status === 403) {
-              errorType = 'API key invalid or permission denied';
-            } else if (response.status === 429) {
-              errorType = 'Quota exceeded';
-            }
-
-            console.error('OpenAI Responses API Error:', errorMessage, 'Status:', response.status, 'Body:', errorBody);
-            return { text: errorMessage, durationMs, error: errorType };
+          let errorType = 'OpenAI API error';
+          if (response.status === 401 || response.status === 403) {
+            errorType = 'API key invalid or permission denied';
+          } else if (response.status === 429) {
+            errorType = 'Quota exceeded';
           }
 
-          const contentType = response.headers.get('content-type') || '';
-          const text = contentType.includes('text/event-stream')
-            ? await readOpenAiStreamingResponse(response)
-            : extractResponseText(await response.json());
+          console.error(`${apiLabel} Error:`, errorMessage, 'Status:', response.status, 'Body:', errorBody);
+          return { text: errorMessage, durationMs, error: errorType };
+        }
 
-          if (!text) {
-            console.error('OpenAI Responses API: invalid response structure or empty stream');
-            return { text: 'AI响应格式无效。', durationMs, error: 'Invalid response structure' };
-          }
+        const text = await getOpenAiResponseText(transport, response);
 
-          return { text, durationMs };
-        } catch (error) {
-          if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
-            return { text: '用户取消操作', durationMs: performance.now() - startTime, error: 'AbortError' };
-          }
-          if (error instanceof Error) {
-            lastFetchError = error;
-          } else {
-            lastFetchError = new Error('Unknown request error');
-          }
-          if (routeIndex < requestRoutes.length - 1) {
-            continue;
-          }
+        if (!text) {
+          console.error(`${apiLabel}: invalid response structure or empty payload`);
+          return { text: 'AI响应格式无效。', durationMs, error: 'Invalid response structure' };
+        }
+
+        return { text, durationMs };
+      } catch (error) {
+        if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
+          return { text: '用户取消操作', durationMs: performance.now() - startTime, error: 'AbortError' };
+        }
+        if (error instanceof Error) {
+          lastFetchError = error;
+        } else {
+          lastFetchError = new Error('Unknown request error');
+        }
+        if (routeIndex < requestRoutes.length - 1) {
+          continue;
         }
       }
-      if (lastFetchError) {
-        throw lastFetchError;
-      }
+    }
+
+    if (lastFetchError) {
+      throw lastFetchError;
     }
 
     throw new Error('OpenAI request failed');
@@ -365,7 +453,7 @@ export const generateOpenAiResponse = async (
       return { text: '用户取消操作', durationMs: performance.now() - startTime, error: 'AbortError' };
     }
 
-    console.error('调用OpenAI Responses API时出错:', error);
+    console.error(`调用${apiLabel}时出错:`, error);
     const durationMs = performance.now() - startTime;
 
     if (error instanceof Error) {
@@ -373,7 +461,7 @@ export const generateOpenAiResponse = async (
       const isUnknownNetworkError = error.name === 'TypeError' && normalizedErrorMessage === 'unknown';
       if (error.message.includes('Failed to fetch') || error.message.includes('Load failed') || isUnknownNetworkError) {
         return {
-          text: buildFetchFailureMessage(endpoint, usedProxyRoute),
+          text: buildFetchFailureMessage(endpoint, usedProxyRoute, transport),
           durationMs,
           error: 'Network request blocked',
         };

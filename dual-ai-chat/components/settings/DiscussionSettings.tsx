@@ -9,7 +9,6 @@ import {
   Plus,
 } from 'lucide-react';
 import { ThinkingControl } from './ThinkingControl';
-import { DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT } from '../../constants';
 
 interface DiscussionSettingsProps {
   isLoading: boolean;
@@ -40,10 +39,9 @@ const OpenAiReasoningNote = ({ accent }: { accent: 'teal' | 'fuchsia' }) => (
         <Database size={16} />
       </div>
       <div className="space-y-1">
-        <h5 className="text-sm font-bold">Responses 思考模式</h5>
+        <h5 className="text-sm font-bold">OpenAI 兼容配置</h5>
         <p className="text-xs leading-relaxed">
-          OpenAI 兼容协议固定使用 <code>response mode</code>，并按 <code>gpt-5.4</code> 口径发送{' '}
-          <code>{`reasoning.effort = ${DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT}`}</code>。
+          OpenAI 兼容的 transport 和 reasoning effort 已移动到上方角色 API 配置中，这里不再单独设置。
         </p>
       </div>
     </div>

@@ -106,6 +106,8 @@ export const useStepExecutor = ({
             modelDetailsForStep.apiName,
             roleConfig.apiKey,
             roleConfig.baseUrl,
+            roleConfig.openaiTransport,
+            roleConfig.openaiReasoningEffort,
             modelDetailsForStep.supportsSystemInstruction ? systemInstructionToUse : undefined,
             imagePayload,
             state.abortControllerRef.current?.signal

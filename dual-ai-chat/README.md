@@ -15,6 +15,9 @@ View your app in AI Studio: https://ai.studio/apps/drive/1wS-wmXT_J4S-sfYxY1wItw
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set provider keys in [.env.local](.env.local) as needed:
+   - `GEMINI_API_KEY=...`
+   - `OPENAI_API_KEY=...` for `https://codex-api.packycode.com/v1`
+   - `OPENAI_COMPAT_API_KEY=...` for `https://api.ai-wave.org/v1`
 3. Run the app:
    `npm run dev`

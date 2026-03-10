@@ -1,5 +1,5 @@
 
-import type { AiModel } from './types';
+import type { AiModel, OpenAiReasoningEffort, OpenAiTransport } from './types';
 
 export const GEMINI_3_PRO_MODEL_ID = 'gemini-3-pro-preview';
 export const GEMINI_2_5_PRO_MODEL_ID = 'gemini-2.5-pro';
@@ -44,6 +44,10 @@ export const DEFAULT_MUSE_MODEL_API_NAME = GEMINI_3_PRO_MODEL_ID;
 export const DEFAULT_GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com';
 export const DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT = 'xhigh';
 export const DEFAULT_OPENAI_RESPONSES_MAX_OUTPUT_TOKENS = 6000;
+export const DEFAULT_OPENAI_TRANSPORT: OpenAiTransport = 'responses';
+export const DEFAULT_OPENAI_CHAT_COMPLETIONS_API_BASE_URL = 'https://api.ai-wave.org/v1';
+export const OPENAI_TRANSPORT_OPTIONS: OpenAiTransport[] = ['responses', 'chat-completions'];
+export const OPENAI_REASONING_EFFORT_OPTIONS: OpenAiReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 
 export const THINKING_BUDGET_RANGES: { [key: string]: { min: number; max: number } } = {
   [GEMINI_2_5_FLASH_MODEL_ID]: { min: 1024, max: 24576 },
