@@ -2,7 +2,7 @@ import path from 'path';
 import { Readable } from 'stream';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import { handleOpenAiCompatibleProxyRequest } from './api/_openaiCompatibleProxy';
+import { handleOpenAiCompatibleProxyRequest } from './api/_openaiCompatibleProxy.js';
 
 const OPENAI_PROXY_PATH = '/api/openai-compatible';
 

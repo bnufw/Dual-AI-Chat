@@ -1,4 +1,4 @@
-import { handleOpenAiCompatibleProxyRequest } from './_openaiCompatibleProxy';
+import { handleOpenAiCompatibleProxyRequest } from './_openaiCompatibleProxy.js';
 
 const handler = async (request: Request) => handleOpenAiCompatibleProxyRequest(request);
 
