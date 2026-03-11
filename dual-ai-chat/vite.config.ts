@@ -2,9 +2,54 @@ import path from 'path';
 import { Readable } from 'stream';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { handleOpenAiCompatibleProxyRequest } from './api/_openaiCompatibleProxy';
+
+const OPENAI_PROXY_PATH = '/api/openai-compatible';
+
+const readNodeRequestBody = (req: any) => new Promise<string>((resolve, reject) => {
+  let raw = '';
+  req.on('data', (chunk: Buffer | string) => {
+    raw += chunk.toString();
+  });
+  req.on('end', () => resolve(raw));
+  req.on('error', reject);
+});
+
+const buildWebHeaders = (rawHeaders: Record<string, string | string[] | undefined>) => {
+  const headers = new Headers();
+  Object.entries(rawHeaders).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      headers.set(key, value.join(', '));
+      return;
+    }
+    if (typeof value === 'string') {
+      headers.set(key, value);
+    }
+  });
+  return headers;
+};
+
+const writeWebResponse = async (response: Response, res: any) => {
+  res.statusCode = response.status;
+  response.headers.forEach((value, key) => {
+    res.setHeader(key, value);
+  });
+
+  if (!response.body) {
+    res.end();
+    return;
+  }
+
+  Readable.fromWeb(response.body as any).pipe(res);
+};
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  process.env.GEMINI_API_KEY ||= env.GEMINI_API_KEY || '';
+  process.env.OPENAI_API_KEY ||= env.OPENAI_API_KEY || env.KEY || '';
+  process.env.OPENAI_COMPAT_API_KEY ||= env.OPENAI_COMPAT_API_KEY || env.KEY2 || '';
+  process.env.KEY ||= env.KEY || '';
+  process.env.KEY2 ||= env.KEY2 || '';
   return {
     server: {
       port: 3000,
@@ -15,61 +60,32 @@ export default defineConfig(({ mode }) => {
       {
         name: 'openai-responses-proxy',
         configureServer(server) {
-          server.middlewares.use('/__openai_responses_proxy', async (req, res) => {
-            if (req.method !== 'POST') {
-              res.statusCode = 405;
-              res.end('Method Not Allowed');
-              return;
-            }
-
-            const target = req.headers['x-openai-target-endpoint'];
-            if (typeof target !== 'string' || !target.startsWith('http')) {
-              res.statusCode = 400;
-              res.end('Missing x-openai-target-endpoint');
-              return;
-            }
-
-            const body = await new Promise<string>((resolve, reject) => {
-              let raw = '';
-              req.on('data', (chunk) => {
-                raw += chunk.toString();
-              });
-              req.on('end', () => resolve(raw));
-              req.on('error', reject);
-            });
-
+          server.middlewares.use(OPENAI_PROXY_PATH, async (req, res) => {
             try {
-              const upstream = await fetch(target, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': (req.headers['content-type'] as string) || 'application/json',
-                  Authorization: (req.headers.authorization as string) || '',
-                  Accept: (req.headers.accept as string) || 'application/json, text/event-stream',
-                },
-                body,
+              const abortController = new AbortController();
+              req.on('close', () => {
+                if (!res.writableEnded) {
+                  abortController.abort();
+                }
               });
 
-              res.statusCode = upstream.status;
-              for (const [headerName, headerValue] of upstream.headers.entries()) {
-                if (headerName.toLowerCase() === 'content-encoding') {
-                  continue;
-                }
-                res.setHeader(headerName, headerValue);
-              }
-
-              if (!upstream.body) {
-                res.end();
-                return;
-              }
-
-              Readable.fromWeb(upstream.body as any).pipe(res);
+              const body = await readNodeRequestBody(req);
+              const request = new Request(`http://vite.local${OPENAI_PROXY_PATH}`, {
+                method: req.method || 'GET',
+                headers: buildWebHeaders(req.headers),
+                body: body || undefined,
+                signal: abortController.signal,
+              });
+              const response = await handleOpenAiCompatibleProxyRequest(request);
+              await writeWebResponse(response, res);
             } catch (error) {
-              res.statusCode = 502;
+              res.statusCode = 500;
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({
                 error: {
-                  type: 'proxy_error',
-                  message: error instanceof Error ? error.message : 'Proxy request failed',
+                  type: 'vite_proxy_error',
+                  message: error instanceof Error ? error.message : 'Vite proxy request failed.',
+                  retryable: false,
                 },
               }));
             }

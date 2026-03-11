@@ -217,14 +217,15 @@ const RoleConfigCard: React.FC<RoleCardProps> = ({
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Transport</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {TRANSPORT_OPTIONS.map((option) => (
-                  <OpenAiOptionButton
-                    key={option.value}
-                    active={config.openaiTransport === option.value}
-                    label={option.label}
-                    description={option.description}
-                    onClick={() => onChange({ openaiTransport: option.value })}
-                    disabled={isLoading}
-                  />
+                  <React.Fragment key={option.value}>
+                    <OpenAiOptionButton
+                      active={config.openaiTransport === option.value}
+                      label={option.label}
+                      description={option.description}
+                      onClick={() => onChange({ openaiTransport: option.value })}
+                      disabled={isLoading}
+                    />
+                  </React.Fragment>
                 ))}
               </div>
             </div>
@@ -233,13 +234,14 @@ const RoleConfigCard: React.FC<RoleCardProps> = ({
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Reasoning Effort</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {REASONING_OPTIONS.map((option) => (
-                  <OpenAiOptionButton
-                    key={option.value}
-                    active={config.openaiReasoningEffort === option.value}
-                    label={option.label}
-                    onClick={() => onChange({ openaiReasoningEffort: option.value })}
-                    disabled={isLoading}
-                  />
+                  <React.Fragment key={option.value}>
+                    <OpenAiOptionButton
+                      active={config.openaiReasoningEffort === option.value}
+                      label={option.label}
+                      onClick={() => onChange({ openaiReasoningEffort: option.value })}
+                      disabled={isLoading}
+                    />
+                  </React.Fragment>
                 ))}
               </div>
               <p className="text-[11px] text-slate-500">

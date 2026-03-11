@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { RefObject } from 'react';
 import { ChatMessage, MessageSender, MessagePurpose, ApiKeyStatus, AiRoleConfig } from '../types';
 import { useAppUI } from './useAppUI';
 import { useNotepadLogic } from './useNotepadLogic';
@@ -29,7 +30,7 @@ const getConfigurationIssue = (
 ): ApiKeyStatus | null =>
   getRoleConfigIssue('Cognito', cognitoConfig) || getRoleConfigIssue('Muse', museConfig);
 
-export const useAppController = (panelsContainerRef: React.RefObject<HTMLDivElement>) => {
+export const useAppController = (panelsContainerRef: RefObject<HTMLDivElement>) => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const saved = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
     if (saved) {

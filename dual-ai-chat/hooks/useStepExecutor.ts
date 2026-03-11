@@ -27,6 +27,16 @@ const getRoleConfigForSender = (
   museConfig: UseStepExecutorProps['museConfig']
 ) => sender === MessageSender.Cognito ? cognitoConfig : museConfig;
 
+const getAutoRetryDelayMs = (attemptIndex: number, retryAfterMs?: number) => {
+  if (typeof retryAfterMs === 'number' && Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+    return retryAfterMs;
+  }
+
+  const exponentialDelay = RETRY_DELAY_BASE_MS * (2 ** attemptIndex);
+  const jitterMs = Math.floor(Math.random() * 250);
+  return exponentialDelay + jitterMs;
+};
+
 export const useStepExecutor = ({
   state,
   addMessage,
@@ -135,7 +145,10 @@ export const useStepExecutor = ({
               isMissing: true,
               message: `${senderForStep} 的 ${getProviderLabel(roleConfig.provider)} API Key 未配置。`,
             });
-            throw new Error(result.text);
+            const missingKeyError = new Error(result.text) as Error & { isApiKeyError?: boolean; retryable?: boolean };
+            missingKeyError.isApiKeyError = true;
+            missingKeyError.retryable = false;
+            throw missingKeyError;
           }
 
           if (result.error === 'API key invalid or permission denied') {
@@ -143,10 +156,19 @@ export const useStepExecutor = ({
               isInvalid: true,
               message: `${senderForStep} 的 ${getProviderLabel(roleConfig.provider)} API Key 无效或权限不足。`,
             });
-            throw new Error(result.text);
+            const invalidKeyError = new Error(result.text) as Error & { isApiKeyError?: boolean; retryable?: boolean };
+            invalidKeyError.isApiKeyError = true;
+            invalidKeyError.retryable = false;
+            throw invalidKeyError;
           }
 
-          throw new Error(result.text || 'AI 响应错误');
+          const requestError = new Error(result.text || 'AI 响应错误') as Error & {
+            retryable?: boolean;
+            retryAfterMs?: number;
+          };
+          requestError.retryable = result.retryable === true;
+          requestError.retryAfterMs = result.retryAfterMs;
+          throw requestError;
         }
 
         setGlobalApiKeyStatus({ isMissing: false, isInvalid: false, message: undefined });
@@ -154,26 +176,29 @@ export const useStepExecutor = ({
         addMessage(parsedResponse.spokenText, senderForStep, purposeForStep, result.durationMs, undefined, result.thoughts);
         stepSuccess = true;
       } catch (error) {
-        const currentError = error as Error;
+        const currentError = error as Error & {
+          isApiKeyError?: boolean;
+          retryable?: boolean;
+          retryAfterMs?: number;
+        };
 
         if (state.cancelRequestRef.current || currentError.name === 'AbortError' || currentError.message === '用户取消操作') {
           throw new Error('用户取消操作');
         }
 
-        if (currentError.message.includes('API密钥') || currentError.message.toLowerCase().includes('api key')) {
+        if (currentError.isApiKeyError || currentError.message.includes('API密钥') || currentError.message.toLowerCase().includes('api key')) {
           throw currentError;
         }
 
-        if (autoRetryCount < MAX_AUTO_RETRIES) {
-          addMessage(
-            `[${senderForStep} - ${stepIdentifier}] 调用失败，重试 (${autoRetryCount + 1}/${MAX_AUTO_RETRIES})... ${currentError.message}`,
-            MessageSender.System,
-            MessagePurpose.SystemNotification
-          );
-          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_BASE_MS * (autoRetryCount + 1)));
+        const shouldAutoRetry = currentError.retryable === true && autoRetryCount < MAX_AUTO_RETRIES;
+
+        if (shouldAutoRetry) {
+          await new Promise((resolve) => setTimeout(resolve, getAutoRetryDelayMs(autoRetryCount, currentError.retryAfterMs)));
         } else {
           const errorMsgId = addMessage(
-            `[${senderForStep} - ${stepIdentifier}] 在 ${MAX_AUTO_RETRIES + 1} 次尝试后失败: ${currentError.message} 可手动重试。`,
+            currentError.retryable
+              ? `[${senderForStep} - ${stepIdentifier}] 调用失败，已自动重试 ${autoRetryCount} 次：${currentError.message}`
+              : `[${senderForStep} - ${stepIdentifier}] 调用失败：${currentError.message}`,
             MessageSender.System,
             MessagePurpose.SystemNotification
           );

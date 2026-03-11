@@ -35,6 +35,8 @@ export interface AiResponsePayload {
   thoughts?: string;
   durationMs: number;
   error?: string; // Standardized error key
+  retryable?: boolean;
+  retryAfterMs?: number;
 }
 
 // Updated types for structured notepad modifications based on JSON instructions

@@ -4,7 +4,8 @@ import {
 } from '../constants';
 import { AiResponsePayload, OpenAiReasoningEffort, OpenAiTransport } from '../types';
 
-const OPENAI_PROXY_PATH = '/__openai_responses_proxy';
+const OPENAI_PROXY_PATH = '/api/openai-compatible';
+const MAX_RETRY_AFTER_MS = 30_000;
 
 const buildOpenAiResponsesInput = (
   prompt: string,
@@ -145,62 +146,70 @@ const normalizeReasoningEffort = (effort: OpenAiReasoningEffort) =>
     ? effort
     : DEFAULT_OPENAI_RESPONSES_REASONING_EFFORT;
 
-const buildFetchFailureMessage = (endpoint: string, attemptedProxy: boolean, transport: OpenAiTransport) => {
-  const reasons = [
-    '浏览器没有拿到任何 HTTP 响应，这通常不是模型正文报错。',
-    '优先检查该接口是否允许当前页面来源的 CORS/OPTIONS 预检。',
-    '确认 Base URL 可被浏览器直接访问，且部署站点与接口之间没有被防火墙、代理或插件拦截。',
-  ];
-
-  if (attemptedProxy) {
-    reasons.push('已自动尝试本地代理路径，但仍未拿到响应。请确认你是通过 `npm run dev` 启动，并且前端地址来自同一个 Vite 实例。');
-  }
-
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && endpoint.startsWith('http://')) {
-    reasons.push('当前页面是 HTTPS，但接口是 HTTP，浏览器会直接拦截混合内容请求。');
-  }
-
-  return [
-    `与AI通信时出错: Failed to fetch`,
-    `请求地址: ${endpoint}`,
-    `请求模式: ${transport === 'responses' ? 'Responses' : 'Chat Completions'}`,
-    ...reasons,
-  ].join('\n');
-};
-
-const isCrossOriginEndpoint = (endpoint: string) => {
-  if (typeof window === 'undefined') return false;
+const canProxyResolveApiKey = (endpoint: string) => {
   try {
-    return new URL(endpoint, window.location.href).origin !== window.location.origin;
+    const { hostname } = typeof window !== 'undefined'
+      ? new URL(endpoint, window.location.href)
+      : new URL(endpoint);
+    return hostname === 'codex-api.packycode.com' || hostname === 'api.ai-wave.org';
   } catch (error) {
     return false;
   }
 };
 
-const postOpenAiRequest = async (
+const clampRetryAfterMs = (value?: number) =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.min(Math.max(value, 0), MAX_RETRY_AFTER_MS)
+    : undefined;
+
+const parseRetryAfterMs = (rawValue: string | null) => {
+  if (!rawValue) return undefined;
+
+  const seconds = Number(rawValue);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return clampRetryAfterMs(seconds * 1000);
+  }
+
+  const dateMs = Date.parse(rawValue);
+  if (Number.isNaN(dateMs)) {
+    return undefined;
+  }
+
+  return clampRetryAfterMs(dateMs - Date.now());
+};
+
+const isRetryableStatus = (status: number, retryAfterMs?: number) =>
+  status === 502
+  || status === 503
+  || status === 504
+  || status === 524
+  || (status === 429 && typeof retryAfterMs === 'number');
+
+const isFetchLikeError = (error: Error) => {
+  const normalizedErrorMessage = error.message.trim().toLowerCase();
+  const isUnknownNetworkError = error.name === 'TypeError' && normalizedErrorMessage === 'unknown';
+  return error.message.includes('Failed to fetch') || error.message.includes('Load failed') || isUnknownNetworkError;
+};
+
+const postOpenAiProxyRequest = async (
   endpoint: string,
   requestBody: Record<string, unknown>,
   apiKey: string,
   signal?: AbortSignal,
-  proxyTarget?: string
-) => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-    Accept: 'application/json, text/event-stream',
-  };
-
-  if (proxyTarget) {
-    headers['x-openai-target-endpoint'] = proxyTarget;
-  }
-
-  return fetch(endpoint, {
+) =>
+  fetch(OPENAI_PROXY_PATH, {
     method: 'POST',
-    headers,
-    body: JSON.stringify(requestBody),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      endpoint,
+      apiKey,
+      requestBody,
+    }),
     signal,
   });
-};
 
 const readOpenAiStreamingResponse = async (response: Response) => {
   if (!response.body) return '';
@@ -346,26 +355,18 @@ export const generateOpenAiResponse = async (
   signal?: AbortSignal
 ): Promise<AiResponsePayload> => {
   const startTime = performance.now();
+  const endpoint = getOpenAiEndpoint(baseUrl, transport);
   const resolvedApiKey = apiKey.trim();
 
-  if (!resolvedApiKey) {
+  if (!resolvedApiKey && !canProxyResolveApiKey(endpoint)) {
     return {
       text: 'API 密钥未在设置中提供。',
       durationMs: performance.now() - startTime,
       error: 'API key not configured',
+      retryable: false,
     };
   }
 
-  const endpoint = getOpenAiEndpoint(baseUrl, transport);
-  const shouldTryProxyFirst = isCrossOriginEndpoint(endpoint);
-  const requestRoutes = shouldTryProxyFirst
-    ? [
-        { endpoint: OPENAI_PROXY_PATH, proxyTarget: endpoint },
-        { endpoint },
-      ]
-    : [{ endpoint }];
-  let lastFetchError: Error | null = null;
-  let usedProxyRoute = false;
   const requestBody = getOpenAiRequestBody(
     transport,
     prompt,
@@ -380,97 +381,83 @@ export const generateOpenAiResponse = async (
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    for (let routeIndex = 0; routeIndex < requestRoutes.length; routeIndex += 1) {
-      const route = requestRoutes[routeIndex];
-      if (route.proxyTarget) {
-        usedProxyRoute = true;
+    const response = await postOpenAiProxyRequest(
+      endpoint,
+      requestBody,
+      resolvedApiKey,
+      signal,
+    );
+
+    const durationMs = performance.now() - startTime;
+    if (!response.ok) {
+      const rawBodyText = await response.text();
+      const errorBody = parseJsonSafely(rawBodyText);
+      const bodySummary = summarizeRawBody(rawBodyText);
+      const hasHtmlBody = /<\s*html|<!doctype html/i.test(rawBodyText);
+      const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+      const proxyErrorType = errorBody?.error?.type;
+      const proxyRetryable = errorBody?.error?.retryable === true;
+
+      let errorMessage =
+        errorBody?.error?.message
+        || errorBody?.message
+        || response.statusText
+        || `请求失败，状态码: ${response.status}`;
+
+      if (!errorBody && bodySummary) {
+        errorMessage = bodySummary;
       }
-      try {
-        const response = await postOpenAiRequest(
-          route.endpoint,
-          requestBody,
-          resolvedApiKey,
-          signal,
-          route.proxyTarget
-        );
 
-        const canFallbackToDirect =
-          !!route.proxyTarget
-          && routeIndex < requestRoutes.length - 1
-          && (response.status === 404 || response.status === 405 || response.status === 502);
-        if (canFallbackToDirect) {
-          continue;
-        }
-
-        const durationMs = performance.now() - startTime;
-        if (!response.ok) {
-          const rawBodyText = await response.text();
-          const errorBody = parseJsonSafely(rawBodyText);
-          const bodySummary = summarizeRawBody(rawBodyText);
-          const hasHtmlBody = /<\s*html|<!doctype html/i.test(rawBodyText);
-
-          let errorMessage =
-            errorBody?.error?.message
-            || errorBody?.message
-            || response.statusText
-            || `请求失败，状态码: ${response.status}`;
-
-          if (!errorBody && bodySummary) {
-            errorMessage = bodySummary;
-          }
-          const endpointDetails = getEndpointDetails(endpoint);
-          if (response.status === 524) {
-            errorMessage = '上游网关超时（HTTP 524）。当前保持所选推理强度未降级；可稍后重试，或手动切换更快模型。';
-          } else if (hasHtmlBody) {
-            errorMessage = `上游网关返回了 HTML 页面（HTTP ${response.status}），请求被网关或代理层拦截。`;
-          } else if (
-            endpointDetails.hostname === 'api.ai-wave.org'
-            && errorMessage.includes('Invalid URL')
-          ) {
-            errorMessage = `ai-wave 返回了 Invalid URL（${endpointDetails.path}）。这通常意味着当前请求没有带上真正生效的 key，或 Base URL / path 与该 key 对应的接口不匹配。`;
-          } else if (errorMessage.trim().toLowerCase() === 'unknown') {
-            errorMessage = `上游返回 unknown（HTTP ${response.status}）。请检查 Base URL、模型名或网关日志。`;
-          }
-
-          let errorType = 'OpenAI API error';
-          if (response.status === 401 || response.status === 403) {
-            errorType = 'API key invalid or permission denied';
-          } else if (response.status === 429) {
-            errorType = 'Quota exceeded';
-          }
-
-          console.error(`${apiLabel} Error:`, errorMessage, 'Status:', response.status, 'Body:', errorBody);
-          return { text: errorMessage, durationMs, error: errorType };
-        }
-
-        const text = await getOpenAiResponseText(transport, response);
-
-        if (!text) {
-          console.error(`${apiLabel}: invalid response structure or empty payload`);
-          return { text: 'AI响应格式无效。', durationMs, error: 'Invalid response structure' };
-        }
-
-        return { text, durationMs };
-      } catch (error) {
-        if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
-          return { text: '用户取消操作', durationMs: performance.now() - startTime, error: 'AbortError' };
-        }
-        if (error instanceof Error) {
-          lastFetchError = error;
-        } else {
-          lastFetchError = new Error('Unknown request error');
-        }
-        if (routeIndex < requestRoutes.length - 1) {
-          continue;
-        }
+      const endpointDetails = getEndpointDetails(endpoint);
+      if (proxyErrorType === 'missing_api_key') {
+        errorMessage = 'API 密钥未在设置中提供。';
+      } else if (proxyErrorType === 'proxy_error') {
+        errorMessage = '上游连接失败，请稍后重试。';
+      } else if (response.status === 429) {
+        errorMessage = retryAfterMs ? '请求过于频繁，稍后重试。' : '请求过于频繁，请稍后再试。';
+      } else if (response.status === 524) {
+        errorMessage = '上游超时，请稍后重试。';
+      } else if (response.status === 502 || response.status === 503 || response.status === 504) {
+        errorMessage = '上游服务暂时不可用，请稍后重试。';
+      } else if (hasHtmlBody) {
+        errorMessage = '上游网关返回了拦截页。';
+      } else if (
+        endpointDetails.hostname === 'api.ai-wave.org'
+        && errorMessage.includes('Invalid URL')
+      ) {
+        errorMessage = `请求配置无效（${endpointDetails.path}）。请检查 Base URL 或 API Key。`;
+      } else if (errorMessage.trim().toLowerCase() === 'unknown') {
+        errorMessage = '上游返回 unknown，请检查接口配置。';
       }
+
+      let errorType = 'OpenAI API error';
+      if (proxyErrorType === 'missing_api_key') {
+        errorType = 'API key not configured';
+      } else if (response.status === 401 || response.status === 403) {
+        errorType = 'API key invalid or permission denied';
+      } else if (response.status === 429) {
+        errorType = retryAfterMs ? 'Rate limited' : 'Quota exceeded';
+      }
+
+      const retryable = !hasHtmlBody && (proxyRetryable || isRetryableStatus(response.status, retryAfterMs));
+      console.error(`${apiLabel} Error:`, errorMessage, 'Status:', response.status, 'Body:', errorBody);
+      return {
+        text: errorMessage,
+        durationMs,
+        error: errorType,
+        retryable,
+        retryAfterMs,
+      };
     }
 
-    if (lastFetchError) {
-      throw lastFetchError;
+    const text = await getOpenAiResponseText(transport, response);
+
+    if (!text) {
+      console.error(`${apiLabel}: invalid response structure or empty payload`);
+      return { text: 'AI响应格式无效。', durationMs, error: 'Invalid response structure', retryable: false };
     }
 
-    throw new Error('OpenAI request failed');
+    return { text, durationMs };
   } catch (error) {
     if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
       return { text: '用户取消操作', durationMs: performance.now() - startTime, error: 'AbortError' };
@@ -480,18 +467,17 @@ export const generateOpenAiResponse = async (
     const durationMs = performance.now() - startTime;
 
     if (error instanceof Error) {
-      const normalizedErrorMessage = error.message.trim().toLowerCase();
-      const isUnknownNetworkError = error.name === 'TypeError' && normalizedErrorMessage === 'unknown';
-      if (error.message.includes('Failed to fetch') || error.message.includes('Load failed') || isUnknownNetworkError) {
+      if (isFetchLikeError(error)) {
         return {
-          text: buildFetchFailureMessage(endpoint, usedProxyRoute, transport),
+          text: '网络请求失败，请稍后重试。',
           durationMs,
-          error: 'Network request blocked',
+          error: 'Proxy request failed',
+          retryable: false,
         };
       }
-      return { text: `与AI通信时出错: ${error.message}`, durationMs, error: error.name };
+      return { text: `与AI通信时出错: ${error.message}`, durationMs, error: error.name, retryable: false };
     }
 
-    return { text: '与AI通信时发生未知错误。', durationMs, error: 'Unknown AI error' };
+    return { text: '与AI通信时发生未知错误。', durationMs, error: 'Unknown AI error', retryable: false };
   }
 };

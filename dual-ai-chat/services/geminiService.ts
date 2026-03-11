@@ -1,5 +1,31 @@
-import { GoogleGenAI, GenerateContentResponse, Part } from '@google/genai';
+import { GoogleGenAI, GenerateContentResponse, Part, ThinkingLevel } from '@google/genai';
 import { AiResponsePayload } from '../types';
+
+type GeminiThinkingConfig = {
+  thinkingBudget?: number;
+  thinkingLevel?: 'LOW' | 'HIGH';
+};
+
+const toSdkThinkingConfig = (thinkingConfig?: GeminiThinkingConfig) => {
+  if (!thinkingConfig) return undefined;
+
+  const sdkThinkingConfig: {
+    thinkingBudget?: number;
+    thinkingLevel?: ThinkingLevel;
+  } = {};
+
+  if (typeof thinkingConfig.thinkingBudget === 'number') {
+    sdkThinkingConfig.thinkingBudget = thinkingConfig.thinkingBudget;
+  }
+
+  if (thinkingConfig.thinkingLevel) {
+    sdkThinkingConfig.thinkingLevel = thinkingConfig.thinkingLevel === 'LOW'
+      ? ThinkingLevel.LOW
+      : ThinkingLevel.HIGH;
+  }
+
+  return Object.keys(sdkThinkingConfig).length > 0 ? sdkThinkingConfig : undefined;
+};
 
 const createGoogleAIClient = (apiKey: string, baseUrl?: string, signal?: AbortSignal): GoogleGenAI => {
   const clientOptions: any = { apiKey };
@@ -44,7 +70,7 @@ export const generateResponse = async (
   baseUrl?: string,
   systemInstruction?: string,
   imagePart?: { inlineData: { mimeType: string; data: string } },
-  thinkingConfig?: { thinkingBudget?: number; thinkingLevel?: 'LOW' | 'HIGH' },
+  thinkingConfig?: GeminiThinkingConfig,
   signal?: AbortSignal
 ): Promise<AiResponsePayload> => {
   const startTime = performance.now();
@@ -60,13 +86,17 @@ export const generateResponse = async (
     }
 
     const genAI = createGoogleAIClient(resolvedApiKey, baseUrl, signal);
-    const configForApi: { systemInstruction?: string; thinkingConfig?: typeof thinkingConfig } = {};
+    const configForApi: {
+      systemInstruction?: string;
+      thinkingConfig?: ReturnType<typeof toSdkThinkingConfig>;
+    } = {};
 
     if (systemInstruction) {
       configForApi.systemInstruction = systemInstruction;
     }
-    if (thinkingConfig) {
-      configForApi.thinkingConfig = thinkingConfig;
+    const sdkThinkingConfig = toSdkThinkingConfig(thinkingConfig);
+    if (sdkThinkingConfig) {
+      configForApi.thinkingConfig = sdkThinkingConfig;
     }
 
     const textPart: Part = { text: prompt };
