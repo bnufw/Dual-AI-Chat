@@ -419,6 +419,11 @@ export const generateOpenAiResponse = async (
         errorMessage = '上游超时，请稍后重试。';
       } else if (response.status === 502 || response.status === 503 || response.status === 504) {
         errorMessage = '上游服务暂时不可用，请稍后重试。';
+      } else if (
+        response.status === 500
+        && bodySummary.toLowerCase().includes('a server error has occurred')
+      ) {
+        errorMessage = '代理服务内部错误。请检查 Vercel Functions 日志。';
       } else if (hasHtmlBody) {
         errorMessage = '上游网关返回了拦截页。';
       } else if (

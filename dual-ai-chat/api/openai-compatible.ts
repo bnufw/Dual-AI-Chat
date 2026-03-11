@@ -1,7 +1,13 @@
 import { handleOpenAiCompatibleProxyRequest } from './_openaiCompatibleProxy';
 
-export const runtime = 'nodejs';
+const handler = async (request: Request) => handleOpenAiCompatibleProxyRequest(request);
 
-export async function POST(request: Request) {
-  return handleOpenAiCompatibleProxyRequest(request);
+export function POST(request: Request) {
+  return handler(request);
 }
+
+export default {
+  fetch(request: Request) {
+    return handler(request);
+  },
+};
